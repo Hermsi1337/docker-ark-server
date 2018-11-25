@@ -16,7 +16,7 @@ before_script:
   - sudo sysctl -w net.ipv4.ip_forward=1 
   - docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}"
   - sudo apt install -y jq
-  - export ARK_TOOLS_VERSION="$(curl --silent "https://api.github.com/repos/FezVrasta/ark-server-tools/releases/latest" | jq -r .tag_name)"
+  - export ARK_TOOLS_VERSION="$(curl --silent "https://api.github.com/repos/FezVrasta/ark-server-tools/releases/latest" | jq -r .tag_name | tr -d 'v')"
 
 script: |
   find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
