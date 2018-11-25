@@ -50,18 +50,14 @@ cp ${STEAM_HOME}/crontab ${ARK_SERVER_VOLUME}/template/crontab
 [[ -L ${ARK_SERVER_VOLUME}/GameUserSettings.ini ]] || ln -s server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini GameUserSettings.ini
 [[ -f ${ARK_SERVER_VOLUME}/crontab ]] || cp ${ARK_SERVER_VOLUME}/template/crontab ${ARK_SERVER_VOLUME}/crontab
 
-if [[ ! -d ${ARK_SERVER_VOLUME}/server  ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server/arkversion ]];then
+if [[ ! -d ${ARK_SERVER_VOLUME}/server  ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server/version.txt ]];then
 	echo "No game files found. Installing..."
-	mkdir -p ${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/SavedArks
-	mkdir -p ${ARK_SERVER_VOLUME}/server/ShooterGame/Content/Mods
-	mkdir -p ${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/
+	create_missing_dir \
+	    ${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/SavedArks \
+	    ${ARK_SERVER_VOLUME}/server/ShooterGame/Content/Mods \
+	    ${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux
 	touch ${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer
 	${ARKMANAGER} install
-else
-	if [[ ${BACKUPONSTART} -eq 1 ]] && [[ "$(ls -A server/ShooterGame/Saved/SavedArks/)" ]]; then
-		echo "[Backup]"
-		${ARKMANAGER} backup
-	fi
 fi
 
 # If there is uncommented line in the file
@@ -77,11 +73,7 @@ else
 fi
 
 # Launching ark server
-if [[ ${UPDATE_ON_START} == "false" ]]; then
-	${ARKMANAGER} start --noautoupdate
-else
-	${ARKMANAGER} start
-fi
+${ARKMANAGER} run
 
 # Stop server in case of signal INT or TERM
 echo "Waiting..."

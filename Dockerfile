@@ -14,6 +14,7 @@ ENV         LANG="en_US.UTF-8" \
             MAX_PLAYERS="20" \
             UPDATE_ON_START="false" \
             BACKUP_ON_STOP="false" \
+            PRE_UPDATE_BACKUP="true" \
             WARN_ON_STOP="true" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
