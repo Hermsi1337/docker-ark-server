@@ -26,6 +26,8 @@ ENV         LANG="en_US.UTF-8" \
             STEAM_GID="1000" \
             STEAM_HOME="/home/steam"
 
+ADD         bin/                        ${STEAM_HOME}/
+
 RUN         set -x && \
             apt-get -qq update && apt-get -qq upgrade && \
             apt-get -qq install curl lib32gcc1 lsof perl-modules libc6-i386 bzip2 bash-completion locales sudo && \
@@ -47,7 +49,6 @@ RUN         set -x && \
             apt-get -qq autoclean && apt-get -qq autoremove && rm -rf /tmp/*
 
 ADD         conf.d/                     ${STEAM_HOME}/
-ADD         bin/                        ${STEAM_HOME}/
 ADD         conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
 
 EXPOSE      ${GAME_CLIENT_PORT}/udp ${RAW_UDP_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
