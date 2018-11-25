@@ -31,6 +31,6 @@ script: |
             --file "${TRAVIS_BUILD_DIR}/Dockerfile" \
             "${TRAVIS_BUILD_DIR}"
   if [[ "${TRAVIS_BRANCH}" == "master" ]] && [[ "${TRAVIS_PULL_REQUEST}" == "false" ]]; then 
-    docker push "${IMAGE_NAME}:${ARK_TOOLS_VERSION}"
+    docker push "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
     docker push "${IMAGE_NAME}:latest"
   fi
