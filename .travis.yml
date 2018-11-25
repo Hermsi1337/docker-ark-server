@@ -17,12 +17,13 @@ before_script:
   - docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}"
   - sudo apt install -y jq
   - export ARK_TOOLS_VERSION="$(curl --silent "https://api.github.com/repos/FezVrasta/ark-server-tools/releases/latest" | jq -r .tag_name | tr -d 'v')"
-  - echo "ARK_TOOLS_VERSION=${ARK_TOOLS_VERSION}"
 
 script: |
+  echo "ARK_TOOLS_VERSION=${ARK_TOOLS_VERSION}"
   find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
   docker build \
             --no-cache \
+            --silent \
             --pull \
             --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}" \
