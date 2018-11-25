@@ -21,7 +21,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - MAX_PLAYERS=${MAX_PLAYERS}
       - UPDATE_ON_START=${UPDATE_ON_START}
-      - BACKUP_ON_START=${BACKUP_ON_START}
+      - BACKUP_ON_STOP=${BACKUP_ON_STOP}
+      - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
       - WARN_ON_STOP=${WARN_ON_STOP}
     ports:
       # Port for connections from ARK game client
