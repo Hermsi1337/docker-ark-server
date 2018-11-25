@@ -17,6 +17,7 @@ before_script:
   - docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}"
   - sudo apt install -y jq
   - export ARK_TOOLS_VERSION="$(curl --silent "https://api.github.com/repos/FezVrasta/ark-server-tools/releases/latest" | jq -r .tag_name | tr -d 'v')"
+  - echo "ARK_TOOLS_VERSION=${ARK_TOOLS_VERSION}"
 
 script: |
   find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
