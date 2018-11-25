@@ -28,10 +28,6 @@ function create_missing_dir {
     done
 }
 
-
-[[ -p /tmp/FIFO ]] && rm /tmp/FIFO
-mkfifo /tmp/FIFO
-
 ARKMANAGER="$(command -v arkmanager)"
 [[ -n "${ARKMANAGER}" ]] || (echo "Arkamanger is missing" ; exit 1)
 
@@ -74,11 +70,3 @@ fi
 
 # Launching ark server
 ${ARKMANAGER} run
-
-# Stop server in case of signal INT or TERM
-echo "Waiting..."
-trap stop INT
-trap stop TERM
-
-read < /tmp/FIFO &
-wait
