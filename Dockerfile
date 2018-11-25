@@ -43,6 +43,7 @@ RUN         set -x && \
                 | tar -xvzf - -C ${STEAM_HOME}/steamcmd/ && \
             bash -x ${STEAM_HOME}/steamcmd/steamcmd.sh +login anonymous +quit && \
             chown -R ${STEAM_USER}:${STEAM_USER} ${ARK_SERVER_VOLUME} && \
+            chmod +x ${STEAM_HOME}/*.sh && \
             apt-get -qq autoclean && apt-get -qq autoremove && rm -rf /tmp/*
 
 ADD         conf.d/                     ${STEAM_HOME}/
