@@ -14,7 +14,7 @@ services:
     volumes:
       - ark-data:/app
     environment:
-      - SESSION_NAME=${ROOT_PASSWORD}
+      - SESSION_NAME=${SESSION_NAME}
       - SERVER_MAP=${SERVER_MAP}
       - SERVER_PASSWORD=${SERVER_PASSWORD}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
