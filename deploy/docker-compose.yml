@@ -24,12 +24,10 @@ services:
       - WARN_ON_STOP=${WARN_ON_STOP}
     ports:
       # Port for connections from ARK game client
-      - "7777:7777"
-      # Raw UDP socket port
-      - "7778:7778"
+      - "7778:7778/udp"
       # RCON management port
-      - "27020:27020"
+      - "27020:27020/tcp"
       # Steam's server-list port
-      - "27016:27016"
+      - "27015:27015/udp"
     networks:
       - default
