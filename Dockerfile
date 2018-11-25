@@ -49,7 +49,7 @@ ADD         conf.d/                     ${STEAM_HOME}/
 ADD         bin/                        ${STEAM_HOME}/
 ADD         conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
 
-EXPOSE      ${GAME_CLIENT_PORT}/udp ${RAW_UDP_PORT}/udp ${SERVER_LIST_PORT}/upd ${RCON_PORT}/tcp
+EXPOSE      ${GAME_CLIENT_PORT}/udp ${RAW_UDP_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 
 VOLUME      ["${ARK_SERVER_VOLUME}"]
 WORKDIR     ${ARK_SERVER_VOLUME}
