@@ -23,7 +23,7 @@ script: |
   find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
   docker build \
             --no-cache \
-            --silent \
+            --quiet \
             --pull \
             --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}" \
