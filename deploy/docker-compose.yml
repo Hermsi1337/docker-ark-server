@@ -6,7 +6,7 @@ volumes:
 services:
   app:
     container_name: ark
-    image: hermsi/ark-server:stable
+    image: hermsi/ark-server:latest
     # If you want to build from fresh source every "docker-compose up" ...
     # ... remove the "image:"-key and uncomment the following two lines:
     #build:

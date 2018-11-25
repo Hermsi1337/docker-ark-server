@@ -1,0 +1,34 @@
+sudo: required
+
+language: bash
+
+addons:
+  apt:
+    packages:
+      - docker-ce
+
+env:
+  global:
+    - IMAGE="ark-server"
+    - IMAGE_NAME="${DOCKER_USER}/${IMAGE}"
+
+before_script:
+  - sudo sysctl -w net.ipv4.ip_forward=1 
+  - docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}"
+  - sudo apt install -y jq
+  - export ARK_TOOLS_VERSION="$(curl --silent "https://api.github.com/repos/FezVrasta/ark-server-tools/releases/latest" | jq -r .tag_name)"
+
+script: |
+  find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
+  docker build \
+            --no-cache \
+            --pull \
+            --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
+            --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}" \
+            --tag "${IMAGE_NAME}:latest" \
+            --file "${TRAVIS_BUILD_DIR}/Dockerfile" \
+            "${TRAVIS_BUILD_DIR}"
+  if [[ "${TRAVIS_BRANCH}" == "master" ]] && [[ "${TRAVIS_PULL_REQUEST}" == "false" ]]; then 
+    docker push "${IMAGE_NAME}:${ARK_TOOLS_VERSION}"
+    docker push "${IMAGE_NAME}:latest"
+  fi
