@@ -4,7 +4,7 @@ volumes:
   ark-data:
 
 services:
-  app:
+  server:
     restart: always
     container_name: ${COMPOSE_PROJECT_NAME}_server
     image: hermsi/ark-server:latest
