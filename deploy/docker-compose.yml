@@ -30,6 +30,6 @@ services:
       # RCON management port
       - "27020:27020"
       # Steam's server-list port
-      - "27015:27015"
+      - "27016:27016"
     networks:
       - default

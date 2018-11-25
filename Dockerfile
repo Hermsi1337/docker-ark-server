@@ -17,8 +17,7 @@ ENV         LANG="en_US.UTF-8" \
             WARN_ON_STOP="true" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
-            GAME_CLIENT_PORT="7777" \
-            RAW_UDP_PORT="7778" \
+            GAME_CLIENT_PORT="7778" \
             RCON_PORT="27020" \
             SERVER_LIST_PORT="27015" \
             STEAM_USER="steam" \
@@ -51,7 +50,7 @@ RUN         set -x && \
 
 ADD         conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
 
-EXPOSE      ${GAME_CLIENT_PORT}/udp ${RAW_UDP_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
+EXPOSE      ${GAME_CLIENT_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 
 VOLUME      ["${ARK_SERVER_VOLUME}"]
 WORKDIR     ${ARK_SERVER_VOLUME}
