@@ -10,7 +10,7 @@ ENV         LANG="en_US.UTF-8" \
             SESSION_NAME="Dockerized ARK Server by github.com/hermsi1337" \
             SERVER_MAP="TheIsland" \
             SERVER_PASSWORD="YouShallNotPass" \
-            ADMIN_PASSWORD="topsecret" \
+            ADMIN_PASSWORD="Th155houldD3f1n3tlyB3Chang3d" \
             MAX_PLAYERS="20" \
             UPDATE_ON_START="false" \
             BACKUP_ON_STOP="false" \
@@ -22,12 +22,10 @@ ENV         LANG="en_US.UTF-8" \
             RCON_PORT="27020" \
             SERVER_LIST_PORT="27015" \
             STEAM_USER="steam" \
+            STEAM_GROUP="steam" \
             STEAM_UID="1000" \
             STEAM_GID="1000" \
             STEAM_HOME="/home/steam"
-
-ADD         bin/                        ${STEAM_HOME}/
-ADD         conf.d/                     ${STEAM_HOME}/
 
 RUN         set -x && \
             apt-get -qq update && apt-get -qq upgrade && \
@@ -45,15 +43,20 @@ RUN         set -x && \
             curl -L http://media.steampowered.com/installer/steamcmd_linux.tar.gz \
                 | tar -xvzf - -C ${STEAM_HOME}/steamcmd/ && \
             bash -x ${STEAM_HOME}/steamcmd/steamcmd.sh +login anonymous +quit && \
-            chown -R ${STEAM_USER}:${STEAM_USER} ${ARK_SERVER_VOLUME} && \
-            chmod +x ${STEAM_HOME}/*.sh && \
-            apt-get -qq autoclean && apt-get -qq autoremove && rm -rf /tmp/*
+            chown -R ${STEAM_USER}:${STEAM_GROUP} ${ARK_SERVER_VOLUME} && \
+            chmod 755 /root/ && \
+            apt-get -qq autoclean && apt-get -qq autoremove && apt-get -qq clean && \
+            rm -rf /tmp/* /var/cache/apt/*
 
 ADD         conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
+ADD         bin/    /
+ADD         conf.d/ ${STEAM_HOME}/
 
 EXPOSE      ${GAME_CLIENT_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 
 VOLUME      ["${ARK_SERVER_VOLUME}"]
 WORKDIR     ${ARK_SERVER_VOLUME}
 
-ENTRYPOINT  ${STEAM_HOME}/user.sh
+USER        ${STEAM_USER}
+
+ENTRYPOINT  ["/entrypoint.sh"]
