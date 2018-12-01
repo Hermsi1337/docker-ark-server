@@ -13,8 +13,7 @@ env:
     - IMAGE_NAME="${DOCKER_USER}/${IMAGE}"
 
 before_script:
-  - sudo sysctl -w net.ipv4.ip_forward=1 
-  - docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}"
+  - sudo sysctl -w net.ipv4.ip_forward=1
   - sudo apt install -y jq
   - export ARK_TOOLS_VERSION="$(curl --silent "https://api.github.com/repos/FezVrasta/ark-server-tools/releases/latest" | jq -r .tag_name | tr -d 'v')"
 
@@ -30,7 +29,8 @@ script: |
             --tag "${IMAGE_NAME}:latest" \
             --file "${TRAVIS_BUILD_DIR}/Dockerfile" \
             "${TRAVIS_BUILD_DIR}"
-  if [[ "${TRAVIS_BRANCH}" == "master" ]] && [[ "${TRAVIS_PULL_REQUEST}" == "false" ]]; then 
+  if [[ "${TRAVIS_BRANCH}" == "master" ]] && [[ "${TRAVIS_PULL_REQUEST}" == "false" ]]; then
+    docker login -u "${DOCKER_USER}" -p "${DOCKER_PASSWORD}"
     docker push "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
     docker push "${IMAGE_NAME}:latest"
   fi
