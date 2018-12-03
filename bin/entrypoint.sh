@@ -6,9 +6,9 @@ function stop {
 		${ARKMANAGER} backup
 	fi
 	if [[ "${WARN_ON_STOP}" == "true" ]];then
-	    ${ARKMANAGER} stop --warn
+	    ${ARKMANAGER} stop --warn --saveworld
 	else
-	    ${ARKMANAGER} stop
+	    ${ARKMANAGER} stop --saveworld
 	fi
 	exit 0
 }
