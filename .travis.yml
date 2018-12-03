@@ -6,6 +6,7 @@ addons:
   apt:
     packages:
       - docker-ce
+      - w3m
 
 env:
   global:
@@ -15,7 +16,7 @@ env:
 before_script:
   - sudo sysctl -w net.ipv4.ip_forward=1
   - sudo apt install -y jq
-  - export ARK_TOOLS_VERSION="$(curl --silent "https://api.github.com/repos/FezVrasta/ark-server-tools/releases/latest" | jq -r .tag_name | tr -d 'v')"
+  - export ARK_TOOLS_VERSION="$(w3m -dump https://github.com/FezVrasta/ark-server-tools/releases | grep -m1 -A2 -i "Latest release" | grep -i "v" | awk '{print $2}' | tr -d "v")"
 
 script: |
   echo "ARK_TOOLS_VERSION=${ARK_TOOLS_VERSION}"
