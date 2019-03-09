@@ -12,6 +12,7 @@ ENV         LANG="en_US.UTF-8" \
             SERVER_PASSWORD="YouShallNotPass" \
             ADMIN_PASSWORD="Th155houldD3f1n3tlyB3Chang3d" \
             MAX_PLAYERS="20" \
+            GAME_MOD_IDS="" \
             UPDATE_ON_START="false" \
             BACKUP_ON_STOP="false" \
             PRE_UPDATE_BACKUP="true" \
@@ -48,9 +49,9 @@ RUN         set -x && \
             apt-get -qq autoclean && apt-get -qq autoremove && apt-get -qq clean && \
             rm -rf /tmp/* /var/cache/apt/*
 
-ADD         conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
-ADD         bin/    /
-ADD         conf.d/ ${STEAM_HOME}/
+COPY         conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
+COPY         bin/    /
+COPY         conf.d/ ${STEAM_HOME}/
 
 EXPOSE      ${GAME_CLIENT_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 
