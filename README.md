@@ -1,5 +1,5 @@
 # Dockerize ARK managed with [ARK-Server-Tools](https://github.com/FezVrasta/ark-server-tools)
-You can use this image in order to start an ARK-Server either public or private sessions.
+You can use this image in order to start an ARK-Server for either public or private sessions.   
 The Server itself is managable by ARK-Server-Tools.
 
 ## Tags
@@ -87,8 +87,10 @@ After your container is up and ARK is installed you can start tweaking your conf
 Basically, you can modify every setting which ARK-Server-Tools are capable of.   
 For reference of the available commands check [their docs](https://github.com/FezVrasta/ark-server-tools#configuration).   
 
-The main config-file is located at the following path in the container: `/app/arkmanager.cfg`   
-You can easily apply your changes directly into that file.
+The main config files are located at the following path in the container: 
+* `/app/server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini`   
+* `/app/server/ShooterGame/Saved/Config/LinuxServer/Game.ini`
+You can easily apply your changes directly into these files.
 
 Alternatively, it is possible to run any available command with ARK-Server-Tools and apply your changes that way:
 ```bash
