@@ -90,6 +90,7 @@ For reference of the available commands check [their docs](https://github.com/Fe
 The main config files are located at the following path in the container: 
 * `/app/server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini`   
 * `/app/server/ShooterGame/Saved/Config/LinuxServer/Game.ini`
+
 You can easily apply your changes directly into these files.
 
 Alternatively, it is possible to run any available command with ARK-Server-Tools and apply your changes that way:
