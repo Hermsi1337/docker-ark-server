@@ -44,7 +44,7 @@ RUN         set -x && \
             curl -L http://media.steampowered.com/installer/steamcmd_linux.tar.gz \
                 | tar -xvzf - -C ${STEAM_HOME}/steamcmd/ && \
             bash -x ${STEAM_HOME}/steamcmd/steamcmd.sh +login anonymous +quit && \
-            chown -R ${STEAM_USER}:${STEAM_GROUP} ${ARK_SERVER_VOLUME} && \
+            chown -R ${STEAM_USER}:${STEAM_GROUP} ${STEAM_HOME} ${ARK_SERVER_VOLUME} && \
             chmod 755 /root/ && \
             apt-get -qq autoclean && apt-get -qq autoremove && apt-get -qq clean && \
             rm -rf /tmp/* /var/cache/apt/*
