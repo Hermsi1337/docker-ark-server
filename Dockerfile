@@ -30,7 +30,7 @@ ENV         LANG="en_US.UTF-8" \
 
 RUN         set -x && \
             apt-get -qq update && apt-get -qq upgrade && \
-            apt-get -qq install curl lib32gcc1 lsof perl-modules libc6-i386 bzip2 bash-completion locales sudo && \
+            apt-get -qq install curl lib32gcc1 lsof perl-modules libc6-i386 bzip2 bash-completion locales sudo cron && \
             sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && locale-gen && \
             addgroup --gid ${STEAM_GID} ${STEAM_USER} && \
             adduser --home ${STEAM_HOME} --uid ${STEAM_UID} --gid ${STEAM_GID} --disabled-login --shell /bin/bash --gecos "" ${STEAM_USER} && \
