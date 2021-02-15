@@ -83,4 +83,5 @@ else
 	echo "No crontab set"
 fi
 
-exec ${ARKMANAGER} run
+${ARKMANAGER} start
+tail -f /dev/null
