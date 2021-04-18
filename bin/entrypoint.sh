@@ -16,7 +16,7 @@ function may_update() {
     return
   fi
 
-  ${ARKMANAGER} update --force --backup --backup
+  ${ARKMANAGER} update --force --backup
 }
 
 function create_missing_dir() {
