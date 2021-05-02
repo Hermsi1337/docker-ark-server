@@ -20,7 +20,7 @@ ENV         LANG="en_US.UTF-8" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
             GAME_CLIENT_PORT="7777" \
-            #(always Game client port +1
+            #always Game client port +1
             UDP_SOCKET_PORT="7778" \
             RCON_PORT="27020" \
             SERVER_LIST_PORT="27015" \
