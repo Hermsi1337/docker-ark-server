@@ -23,7 +23,8 @@ The basic configuration of your server is done by using environment variables wh
 | PRE_UPDATE_BACKUP | true | Create a backup before updating ARK-server |
 | WARN_ON_STOP | true | Broadcast a warning upon graceful shutdown |
 | ARK_SERVER_VOLUME | /app | Path where the server-files are stored |
-| GAME_CLIENT_PORT | 7778 | Exposed game-client port |
+| GAME_CLIENT_PORT | 7777 | Exposed game-client port |
+| GAME_CLIENT_PORT | 7778 | Raw UDP socket port (always Game client port +1) |
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list port |
 | GAME_MOD_IDS | `empty` |  Additional game-mods you want to install, seperated by comma. (e.g. GAME_MOD_IDS="487516323,487516324,487516325") |
@@ -68,6 +69,8 @@ services:
       - WARN_ON_STOP=${WARN_ON_STOP}
     ports:
       # Port for connections from ARK game client
+      - "7778:7778/udp"
+      # Raw UDP socket port (always Game client port +1)
       - "7778:7778/udp"
       # RCON management port
       - "27020:27020/tcp"
