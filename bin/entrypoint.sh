@@ -11,7 +11,8 @@ function may_update() {
 
   echo "\$UPDATE_ON_START is 'true'..."
 
-  if ! ${ARKMANAGER} checkupdate; then
+  # 0: No update is available
+  if ${ARKMANAGER} checkupdate; then
     echo "...no update available"
     return
   fi
