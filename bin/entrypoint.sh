@@ -94,4 +94,4 @@ else
   echo "No crontab set"
 fi
 
-exec ${ARKMANAGER} run
+exec ${ARKMANAGER} run $*
