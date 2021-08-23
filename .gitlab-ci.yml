@@ -4,12 +4,12 @@ stages:
 variables:
   IMAGE_NAME: "hermsi/ark-server"
 
-image: debian:stretch-slim
+image: debian:stable-slim
 
 before_script:
   - >
     apt-get update;
-    apt-get install -y w3m curl jq
+    apt-get install -y w3m curl jq gawk grep
   - curl -Ss -L get.docker.com | bash
   - export ARK_TOOLS_VERSION="$(w3m -dump https://github.com/FezVrasta/ark-server-tools/releases | grep -m1 -A2 -i "Latest release" | grep -i "v" | awk '{print $2}' | tr -d "v")"
   - find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
