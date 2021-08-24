@@ -1,8 +1,8 @@
-FROM        debian:stable-slim
+FROM        debian:buster-slim
 
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
-ARG         ARK_TOOLS_VERSION="1.6.42"
+ARG         ARK_TOOLS_VERSION="1.6.60b"
 ENV         LANG="en_US.UTF-8" \
             LANGUAGE="en_US:en" \
             LC_ALL="en_US.UTF-8" \
