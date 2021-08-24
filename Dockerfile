@@ -62,3 +62,4 @@ WORKDIR     ${ARK_SERVER_VOLUME}
 USER        ${STEAM_USER}
 
 ENTRYPOINT  ["/entrypoint.sh"]
+CMD         []
