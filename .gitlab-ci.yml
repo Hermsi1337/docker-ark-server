@@ -11,7 +11,7 @@ image: docker:20
 
 before_script:
   - apk add --no-cache w3m curl jq gawk grep bash
-  - export ARK_TOOLS_VERSION="$(w3m -dump https://github.com/FezVrasta/ark-server-tools/releases | grep -A2 -i "Latest release" | grep -i "v" | awk '{print $2}' | tr -d "v" | head -n1)"
+  - export ARK_TOOLS_VERSION="$(w3m -dump https://github.com/FezVrasta/ark-server-tools/tags | egrep -o "v[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?" | head -n 1)"
   - find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
   - export TIMESTAMP="$(date +%s)"
 
