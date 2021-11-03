@@ -69,7 +69,7 @@ services:
       - WARN_ON_STOP=${WARN_ON_STOP}
     ports:
       # Port for connections from ARK game client
-      - "7778:7778/udp"
+      - "7777:7777/udp"
       # Raw UDP socket port (always Game client port +1)
       - "7778:7778/udp"
       # RCON management port
