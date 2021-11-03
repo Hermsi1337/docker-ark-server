@@ -42,21 +42,13 @@ In order to startup your own ARK-server with `docker-compose` - which I personal
 ```yml
 version: '3'
 
-volumes:
-  ark-data:
-    driver: local
-    driver_opts:
-      type: "none"
-      o: "bind"
-      device: "${HOME}/ark-server"
-
 services:
   server:
     restart: always
     container_name: ark_server
     image: hermsi/ark-server:latest
     volumes:
-      - ark-data:/app
+      - ${HOME}/ark-server:/app
     environment:
       - SESSION_NAME=${SESSION_NAME}
       - SERVER_MAP=${SERVER_MAP}
