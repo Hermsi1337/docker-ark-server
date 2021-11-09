@@ -49,6 +49,7 @@ services:
     image: hermsi/ark-server:latest
     volumes:
       - ${HOME}/ark-server:/app
+      - ${HOME}/ark-server-backups:/home/steam/ARK-Backups
     environment:
       - SESSION_NAME=${SESSION_NAME}
       - SERVER_MAP=${SERVER_MAP}
