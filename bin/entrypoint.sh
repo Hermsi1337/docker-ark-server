@@ -46,10 +46,19 @@ if [[ ! "$(id -u "${STEAM_USER}")" -eq "${STEAM_UID}" ]] || [[ ! "$(id -g "${STE
   sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" "${ARK_SERVER_VOLUME}" "${STEAM_HOME}"
 fi
 
+args=("$*")
+if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
+  args=('--arkopt,-crossplay' "${args[@]}");
+fi
+if [[ "${DISABLE_BATTLEYE}" == "true" ]]; then
+  args=('--arkopt,-NoBattlEye' "${args[@]}");
+fi
+
 echo "_______________________________________"
 echo ""
 echo "# Ark Server - $(date)"
 echo "# UID ${STEAM_UID} - GID ${STEAM_GID}"
+echo "# ARGS ${args[@]}"
 echo "_______________________________________"
 
 ARKMANAGER="$(command -v arkmanager)"
@@ -94,4 +103,4 @@ else
   echo "No crontab set"
 fi
 
-exec ${ARKMANAGER} run $*
+exec ${ARKMANAGER} run "${args[@]}"

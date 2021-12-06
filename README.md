@@ -22,6 +22,8 @@ The basic configuration of your server is done by using environment variables wh
 | BACKUP_ON_STOP | false | Create a backup before gracefully stopping the ARK-server |
 | PRE_UPDATE_BACKUP | true | Create a backup before updating ARK-server |
 | WARN_ON_STOP | true | Broadcast a warning upon graceful shutdown |
+| ENABLE_CROSSPLAY | false | Enable crossplay. When enabled battleye should be disabled as it likes to disconnect epic players |
+| DISABLE_BATTLEYE | false | Disable Battleye protection |
 | ARK_SERVER_VOLUME | /app | Path where the server-files are stored |
 | GAME_CLIENT_PORT | 7777 | Exposed game-client port |
 | UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always Game client port +1) |
@@ -31,7 +33,7 @@ The basic configuration of your server is done by using environment variables wh
 
 #### Get things runnning
 ##### `docker-run`
-I personally preffer `docker-compose` but for those of you, who want to run their own ARK-server without any "zip and zap", here you go:
+I personally prefer `docker-compose` but for those of you, who want to run their own ARK-server without any "zip and zap", here you go:
 ```bash
 # You may want to change SESSION_NAME, ADMIN_PASSWORD or host-volume
 $ docker run -d --name="ark_server" --restart=always -v "${HOME}/ark-server:/app" -e SESSION_NAME="Awesome ARK is awesome" -e ADMIN_PASSWORD="FooB4r"
