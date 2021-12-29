@@ -5,12 +5,13 @@ set -e
 [[ -z "${DEBUG}" ]] || set -x
 
 function ensure_rights() {
-  if [[ -z "${1}" ]]; then
-    sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" "${ARK_SERVER_VOLUME}" "${STEAM_HOME}"
-  else
-    echo "... ensuring rights on ${1}"
-    sudo chown -R "${1}"
+  TARGET="${ARK_TOOLS_DIR} ${ARK_SERVER_VOLUME} ${STEAM_HOME}"
+  if [[ -n "${1}" ]]; then
+    TARGET="${1}"
   fi
+
+  echo "...ensuring rights on ${TARGET}"
+  sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" ${TARGET}
 }
 
 function may_update() {
@@ -85,8 +86,12 @@ cd "${ARK_SERVER_VOLUME}"
 
 echo "Setting up folder and file structure..."
 create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging" "${ARK_SERVER_VOLUME}/template"
-copy_missing_file "${STEAM_HOME}/.arkmanager.cfg" "${ARK_SERVER_VOLUME}/template/arkmanager.cfg"
+
+# copy from steam home to template directory
+copy_missing_file "${STEAM_HOME}/arkmanager.cfg" "${ARK_SERVER_VOLUME}/template/arkmanager.cfg"
 copy_missing_file "${STEAM_HOME}/crontab" "${ARK_SERVER_VOLUME}/template/crontab"
+
+# copy from template to server volume
 copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager.cfg" "${ARK_SERVER_VOLUME}/arkmanager.cfg"
 copy_missing_file "${ARK_SERVER_VOLUME}/template/crontab" "${ARK_SERVER_VOLUME}/crontab"
 
