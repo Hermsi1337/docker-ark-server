@@ -4,6 +4,15 @@ set -e
 
 [[ -z "${DEBUG}" ]] || set -x
 
+function ensure_rights() {
+  if [[ -z "${1}" ]]; then
+    sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" "${ARK_SERVER_VOLUME}" "${STEAM_HOME}"
+  else
+    echo "... ensuring rights on ${1}"
+    sudo chown -R "${1}"
+  fi
+}
+
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
     return
@@ -26,6 +35,7 @@ function create_missing_dir() {
     if [[ ! -d "${DIRECTORY}" ]]; then
       mkdir -p "${DIRECTORY}"
       echo "...successfully created ${DIRECTORY}"
+      ensure_rights "${DIRECTORY}"
     fi
   done
 }
@@ -38,6 +48,8 @@ function copy_missing_file() {
     cp -a "${SOURCE}" "${DESTINATION}"
     echo "...successfully copied ${SOURCE} to ${DESTINATION}"
   fi
+
+  ensure_rights "${DESTINATION}"
 }
 
 if [[ ! "$(id -u "${STEAM_USER}")" -eq "${STEAM_UID}" ]] || [[ ! "$(id -g "${STEAM_GROUP}")" -eq "${STEAM_GID}" ]]; then
@@ -46,7 +58,7 @@ if [[ ! "$(id -u "${STEAM_USER}")" -eq "${STEAM_UID}" ]] || [[ ! "$(id -g "${STE
 fi
 
 # Always ensure correct rights on home and volume folder
-sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" "${ARK_SERVER_VOLUME}" "${STEAM_HOME}"
+ensure_rights ""
 
 args=("$*")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
@@ -99,7 +111,7 @@ ACTIVE_CRONS="$(grep -v "^#" "${ARK_SERVER_VOLUME}/crontab" 2>/dev/null | wc -l)
 if [[ ${ACTIVE_CRONS} -gt 0 ]]; then
   echo "Loading crontab..."
   crontab "${ARK_SERVER_VOLUME}/crontab"
-  sudo cron -f &
+  sudo service cron start
   echo "...done"
 else
   echo "No crontab set"
