@@ -43,8 +43,10 @@ function copy_missing_file() {
 if [[ ! "$(id -u "${STEAM_USER}")" -eq "${STEAM_UID}" ]] || [[ ! "$(id -g "${STEAM_GROUP}")" -eq "${STEAM_GID}" ]]; then
   sudo usermod -o -u "${STEAM_UID}" "${STEAM_USER}"
   sudo groupmod -o -g "${STEAM_GID}" "${STEAM_GROUP}"
-  sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" "${ARK_SERVER_VOLUME}" "${STEAM_HOME}"
 fi
+
+# Always ensure correct rights on home and volume folder
+sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" "${ARK_SERVER_VOLUME}" "${STEAM_HOME}"
 
 args=("$*")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
@@ -58,7 +60,7 @@ echo "_______________________________________"
 echo ""
 echo "# Ark Server - $(date)"
 echo "# UID ${STEAM_UID} - GID ${STEAM_GID}"
-echo "# ARGS ${args[@]}"
+echo "# ARGS ${args[*]}"
 echo "_______________________________________"
 
 ARKMANAGER="$(command -v arkmanager)"
@@ -71,7 +73,7 @@ cd "${ARK_SERVER_VOLUME}"
 
 echo "Setting up folder and file structure..."
 create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging" "${ARK_SERVER_VOLUME}/template"
-copy_missing_file "${STEAM_HOME}/arkmanager.cfg" "${ARK_SERVER_VOLUME}/template/arkmanager.cfg"
+copy_missing_file "${STEAM_HOME}/.arkmanager.cfg" "${ARK_SERVER_VOLUME}/template/arkmanager.cfg"
 copy_missing_file "${STEAM_HOME}/crontab" "${ARK_SERVER_VOLUME}/template/crontab"
 copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager.cfg" "${ARK_SERVER_VOLUME}/arkmanager.cfg"
 copy_missing_file "${ARK_SERVER_VOLUME}/template/crontab" "${ARK_SERVER_VOLUME}/crontab"
@@ -103,4 +105,4 @@ else
   echo "No crontab set"
 fi
 
-exec ${ARKMANAGER} run "${args[@]}"
+exec "${ARKMANAGER}" run "${args[@]}"
