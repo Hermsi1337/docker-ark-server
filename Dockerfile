@@ -18,7 +18,6 @@ ENV         LANG="en_US.UTF-8" \
             PRE_UPDATE_BACKUP="true" \
             WARN_ON_STOP="true" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
-            ARK_TOOLS_DIR="/etc/arkamanger" \
             ARK_SERVER_VOLUME="/app" \
             GAME_CLIENT_PORT="7777" \
             UDP_SOCKET_PORT="7778" \
@@ -27,8 +26,10 @@ ENV         LANG="en_US.UTF-8" \
             STEAM_USER="steam" \
             STEAM_GROUP="steam" \
             STEAM_UID="1000" \
-            STEAM_GID="1000" \
-            STEAM_HOME="/home/steam"
+            STEAM_GID="1000"
+
+ENV         ARK_TOOLS_DIR="${ARK_SERVER_VOLUME}/arkmanager" \
+            STEAM_HOME="/home/${STEAM_USER}"
 
 RUN         set -x && \
             apt-get -qq update && apt-get -qq upgrade && \
@@ -43,6 +44,7 @@ RUN         set -x && \
                 | tar -xvzf - -C /tmp/ && \
             bash -c "cd /tmp/ark-server-tools-${ARK_TOOLS_VERSION}/tools && bash install.sh ${STEAM_USER}" && \
             ln -s /usr/local/bin/arkmanager /usr/bin/arkmanager && \
+            ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager" && \
             curl -L "https://media.steampowered.com/installer/steamcmd_linux.tar.gz" \
                 | tar -xvzf - -C ${STEAM_HOME}/steamcmd/ && \
             bash -x ${STEAM_HOME}/steamcmd/steamcmd.sh +login anonymous +quit && \
