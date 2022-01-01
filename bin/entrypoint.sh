@@ -21,13 +21,9 @@ function may_update() {
 
   echo "\$UPDATE_ON_START is 'true'..."
 
-  # 0: No update is available
-  if ${ARKMANAGER} checkupdate; then
-    echo "...no update available"
-    return
-  fi
-
-  ${ARKMANAGER} update --force --backup
+  # auto checks if a update is needed, if yes, then update the server or mods 
+  # (otherwise it just does nothing)
+  ${ARKMANAGER} update --verbose --update-mods --backup
 }
 
 function create_missing_dir() {
@@ -107,7 +103,7 @@ if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server
     "${ARK_SERVER_VOLUME}/server/ShooterGame/Content/Mods" \
     "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux"
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
-  ${ARKMANAGER} install
+  ${ARKMANAGER} install --verbose
 else
   may_update
 fi
@@ -122,4 +118,4 @@ else
   echo "No crontab set"
 fi
 
-exec "${ARKMANAGER}" run "${args[@]}"
+exec ${ARKMANAGER} run --verbose "${args[@]}"
