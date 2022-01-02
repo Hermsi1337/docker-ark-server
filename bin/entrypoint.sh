@@ -13,7 +13,7 @@ function may_update() {
 
   # auto checks if a update is needed, if yes, then update the server or mods 
   # (otherwise it just does nothing)
-  ${ARKMANAGER} update --verbose --update-mods --backup
+  ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart
 }
 
 function create_missing_dir() {
@@ -69,13 +69,13 @@ echo "Setting up folder and file structure..."
 create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging" "${ARK_SERVER_VOLUME}/template"
 copy_missing_file "${STEAM_HOME}/arkmanager.cfg" "${ARK_SERVER_VOLUME}/template/arkmanager.cfg"
 copy_missing_file "${STEAM_HOME}/crontab" "${ARK_SERVER_VOLUME}/template/crontab"
-copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager.cfg" "${ARK_SERVER_VOLUME}/arkmanager.cfg"
+# copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager.cfg" "${ARK_SERVER_VOLUME}/arkmanager.cfg"
 copy_missing_file "${ARK_SERVER_VOLUME}/template/crontab" "${ARK_SERVER_VOLUME}/crontab"
 
 [[ -L "${ARK_SERVER_VOLUME}/Game.ini" ]] ||
-  ln -s "${ARK_SERVER_VOLUME}"/server/ShooterGame/Saved/Config/LinuxServer/Game.ini Game.ini
+  ln -s ./server/ShooterGame/Saved/Config/LinuxServer/Game.ini Game.ini
 [[ -L "${ARK_SERVER_VOLUME}/GameUserSettings.ini" ]] ||
-  ln -s "${ARK_SERVER_VOLUME}"/server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini GameUserSettings.ini
+  ln -s ./server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini GameUserSettings.ini
 
 if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server/version.txt ]]; then
   echo "No game files found. Installing..."
@@ -98,5 +98,6 @@ if [[ ${ACTIVE_CRONS} -gt 0 ]]; then
 else
   echo "No crontab set"
 fi
+
 
 exec ${ARKMANAGER} run --verbose "${args[@]}"
