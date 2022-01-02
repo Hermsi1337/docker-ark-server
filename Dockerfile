@@ -50,9 +50,10 @@ RUN         set -x && \
             apt-get -qq autoclean && apt-get -qq autoremove && apt-get -qq clean && \
             rm -rf /tmp/* /var/cache/apt/*
 
+COPY        conf.d/arkmanager.cfg  /etc/arkmanager/arkmanager.cfg
 COPY        conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
 COPY        bin/    /
-COPY        conf.d/ ${STEAM_HOME}/
+# COPY        conf.d/ ${STEAM_HOME}/
 
 EXPOSE      ${GAME_CLIENT_PORT}/udp ${UDP_SOCKET_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 
