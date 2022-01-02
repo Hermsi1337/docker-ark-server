@@ -13,7 +13,7 @@ function may_update() {
 
   # auto checks if a update is needed, if yes, then update the server or mods 
   # (otherwise it just does nothing)
-  ${ARKMANAGER} update --verbose --update-mods --backup
+  ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart
 }
 
 function create_missing_dir() {
@@ -98,5 +98,6 @@ if [[ ${ACTIVE_CRONS} -gt 0 ]]; then
 else
   echo "No crontab set"
 fi
+
 
 exec ${ARKMANAGER} run --verbose "${args[@]}"
