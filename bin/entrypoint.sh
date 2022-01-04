@@ -102,11 +102,15 @@ copy_missing_file "${ARK_SERVER_VOLUME}/template/crontab" "${ARK_SERVER_VOLUME}/
 
 if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server/version.txt ]]; then
   echo "No game files found. Installing..."
+
   create_missing_dir \
     "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/SavedArks" \
     "${ARK_SERVER_VOLUME}/server/ShooterGame/Content/Mods" \
     "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux"
+
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
+  chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
+
   ${ARKMANAGER} install
 else
   may_update
