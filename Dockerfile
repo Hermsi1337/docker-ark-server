@@ -39,7 +39,7 @@ RUN         set -x && \
             adduser --home ${STEAM_HOME} --uid ${STEAM_UID} --gid ${STEAM_GID} --disabled-login --shell /bin/bash --gecos "" ${STEAM_USER} && \
             echo "${STEAM_USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
             usermod -a -G sudo ${STEAM_USER} && \
-            mkdir -p ${ARK_TOOLS_DIR} ${ARK_SERVER_VOLUME} ${STEAM_HOME}/steamcmd && \
+            mkdir -p ${ARK_TOOLS_DIR}/instances ${ARK_SERVER_VOLUME} ${STEAM_HOME}/steamcmd && \
             curl -L "https://github.com/FezVrasta/ark-server-tools/archive/v${ARK_TOOLS_VERSION}.tar.gz" \
                 | tar -xvzf - -C /tmp/ && \
             bash -c "cd /tmp/ark-server-tools-${ARK_TOOLS_VERSION}/tools && bash install.sh ${STEAM_USER}" && \
@@ -55,7 +55,6 @@ RUN         set -x && \
 
 COPY        conf.d/arkmanager-user.cfg  /etc/arkmanager/instances/main.cfg
 COPY        bin/    /
-COPY        conf.d/ ${STEAM_HOME}/
 
 EXPOSE      ${GAME_CLIENT_PORT}/udp ${UDP_SOCKET_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 

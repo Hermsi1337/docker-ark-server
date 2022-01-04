@@ -2,7 +2,7 @@
 
 set -e
 
-[[ -z "${DEBUG}" ]] || set -x
+[[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
 
 function ensure_rights() {
   TARGET="${ARK_TOOLS_DIR} ${ARK_SERVER_VOLUME} ${STEAM_HOME}"
@@ -21,13 +21,9 @@ function may_update() {
 
   echo "\$UPDATE_ON_START is 'true'..."
 
-  # 0: No update is available
-  if ${ARKMANAGER} checkupdate; then
-    echo "...no update available"
-    return
-  fi
-
-  ${ARKMANAGER} update --force --backup
+  # auto checks if a update is needed, if yes, then update the server or mods 
+  # (otherwise it just does nothing)
+  ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart
 }
 
 function create_missing_dir() {
@@ -92,13 +88,14 @@ copy_missing_file "${STEAM_HOME}/arkmanager.cfg" "${ARK_SERVER_VOLUME}/template/
 copy_missing_file "${STEAM_HOME}/crontab" "${ARK_SERVER_VOLUME}/template/crontab"
 
 # copy from template to server volume
-copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager.cfg" "${ARK_SERVER_VOLUME}/arkmanager.cfg"
+copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkmanager.cfg"
+copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
 copy_missing_file "${ARK_SERVER_VOLUME}/template/crontab" "${ARK_SERVER_VOLUME}/crontab"
 
 [[ -L "${ARK_SERVER_VOLUME}/Game.ini" ]] ||
-  ln -s "${ARK_SERVER_VOLUME}"/server/ShooterGame/Saved/Config/LinuxServer/Game.ini Game.ini
+  ln -s ./server/ShooterGame/Saved/Config/LinuxServer/Game.ini Game.ini
 [[ -L "${ARK_SERVER_VOLUME}/GameUserSettings.ini" ]] ||
-  ln -s "${ARK_SERVER_VOLUME}"/server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini GameUserSettings.ini
+  ln -s ./server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini GameUserSettings.ini
 
 if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server/version.txt ]]; then
   echo "No game files found. Installing..."
@@ -111,7 +108,7 @@ if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
-  ${ARKMANAGER} install
+  ${ARKMANAGER} install --verbose
 else
   may_update
 fi
@@ -126,4 +123,4 @@ else
   echo "No crontab set"
 fi
 
-exec "${ARKMANAGER}" run "${args[@]}"
+exec ${ARKMANAGER} run --verbose ${args[@]}
