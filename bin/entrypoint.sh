@@ -5,7 +5,7 @@ set -e
 [[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
 
 function ensure_rights() {
-  TARGET="${ARK_TOOLS_DIR} ${ARK_SERVER_VOLUME} ${STEAM_HOME}"
+  TARGET="${ARK_SERVER_VOLUME} ${STEAM_HOME}"
   if [[ -n "${1}" ]]; then
     TARGET="${1}"
   fi
@@ -46,7 +46,7 @@ function copy_missing_file() {
     echo "...successfully copied ${SOURCE} to ${DESTINATION}"
   fi
 
-  ensure_rights "${DESTINATION}"
+  ensure_rights ${DESTINATION}
 }
 
 if [[ ! "$(id -u "${STEAM_USER}")" -eq "${STEAM_UID}" ]] || [[ ! "$(id -g "${STEAM_GROUP}")" -eq "${STEAM_GID}" ]]; then
@@ -81,16 +81,25 @@ ARKMANAGER="$(command -v arkmanager)"
 cd "${ARK_SERVER_VOLUME}"
 
 echo "Setting up folder and file structure..."
-create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging" "${ARK_SERVER_VOLUME}/template"
+create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging"
 
-# copy from steam home to template directory
-copy_missing_file "${STEAM_HOME}/arkmanager.cfg" "${ARK_SERVER_VOLUME}/template/arkmanager.cfg"
-copy_missing_file "${STEAM_HOME}/crontab" "${ARK_SERVER_VOLUME}/template/crontab"
+
+echo "Setting up Arkmanager..."
+# setup arkmanager directories
+if [[ ! -d ${ARK_TOOLS_DIR} ]]; then
+  sudo mv "/etc/arkmanager" "${ARK_TOOLS_DIR}"
+  ensure_rights "${ARK_TOOLS_DIR}"
+  rm -f "${ARK_TOOLS_DIR}/arkmanager.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
+fi
+
+# symlink arkmanager directories
+sudo rm -rf "/etc/arkmanager"
+sudo ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
 
 # copy from template to server volume
-copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkmanager.cfg"
-copy_missing_file "${ARK_SERVER_VOLUME}/template/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
-copy_missing_file "${ARK_SERVER_VOLUME}/template/crontab" "${ARK_SERVER_VOLUME}/crontab"
+copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkmanager.cfg"
+copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
+copy_missing_file "${TEMPLATE_DIRECTORY}/crontab" "${ARK_SERVER_VOLUME}/crontab"
 
 [[ -L "${ARK_SERVER_VOLUME}/Game.ini" ]] ||
   ln -s ./server/ShooterGame/Saved/Config/LinuxServer/Game.ini Game.ini
