@@ -132,4 +132,20 @@ else
   echo "No crontab set"
 fi
 
+if [[ -n "${GAME_MOD_IDS}" ]]; then
+  echo "Installing mods: '${GAME_MOD_IDS}' ..."
+
+  for MOD_ID in ${GAME_MOD_IDS//,/ }; do
+    echo "...installing '${MOD_ID}'"
+
+    if [[ -d "${ARK_SERVER_VOLUME}/server/ShooterGame/Content/Mods/${MOD_ID}" ]]; then
+      echo "...already installed"
+      continue
+    fi
+
+    ${ARKMANAGER} installmod "${MOD_ID}" --verbose
+    echo "...done"
+  done
+fi
+
 exec ${ARKMANAGER} run --verbose ${args[@]}
