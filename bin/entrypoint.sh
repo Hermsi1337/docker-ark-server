@@ -2,7 +2,7 @@
 
 set -e
 
-[[ -z "${DEBUG}" ]] || set -x
+[[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
 
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
@@ -100,4 +100,4 @@ else
 fi
 
 
-exec ${ARKMANAGER} run --verbose "${args[@]}"
+exec ${ARKMANAGER} run --verbose ${args[@]}
