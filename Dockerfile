@@ -42,7 +42,7 @@ RUN         set -x && \
             echo "${STEAM_USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
             usermod -a -G sudo ${STEAM_USER} && \
             mkdir -p ${ARK_SERVER_VOLUME} ${STEAM_HOME}/steamcmd && \
-            curl -L "https://github.com/FezVrasta/ark-server-tools/archive/v${ARK_TOOLS_VERSION}.tar.gz" \
+            curl -L "https://github.com/arkmanager/ark-server-tools/archive/v${ARK_TOOLS_VERSION}.tar.gz" \
                 | tar -xvzf - -C /tmp/ && \
             bash -c "cd /tmp/ark-server-tools-${ARK_TOOLS_VERSION}/tools && bash install.sh ${STEAM_USER}" && \
             ln -s /usr/local/bin/arkmanager /usr/bin/arkmanager && \
