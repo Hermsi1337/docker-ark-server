@@ -100,4 +100,4 @@ else
 fi
 
 
-exec ${ARKMANAGER} run --verbose "${args[@]}"
+exec ${ARKMANAGER} run --verbose ${args[@]}
