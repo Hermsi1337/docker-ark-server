@@ -21,7 +21,6 @@ build:docker:
     - >
       docker build
       --no-cache
-      --quiet
       --pull
       --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}"
       --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
@@ -41,7 +40,6 @@ deploy:docker:
     - >
       docker build
       --no-cache
-      --quiet
       --pull
       --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}"
       --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
