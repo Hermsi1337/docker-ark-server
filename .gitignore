@@ -1,2 +1,4 @@
 .idea/
 deploy/.env
+deploy/docker-compose.override.yml
+volumes/

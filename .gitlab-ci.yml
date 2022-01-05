@@ -21,7 +21,6 @@ build:docker:
     - >
       docker build
       --no-cache
-      --quiet
       --pull
       --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}"
       --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
@@ -31,6 +30,9 @@ build:docker:
       "${CI_PROJECT_DIR}"
   except:
     - master
+  parallel:
+    matrix:
+      - IMAGE_NAME: [ "hermsi/ark-server" ]
 
 deploy:docker:
   stage: deploy
@@ -38,7 +40,6 @@ deploy:docker:
     - >
       docker build
       --no-cache
-      --quiet
       --pull
       --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}"
       --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
@@ -46,9 +47,15 @@ deploy:docker:
       --tag "${IMAGE_NAME}:latest-${TIMESTAMP}"
       --file "${CI_PROJECT_DIR}/Dockerfile"
       "${CI_PROJECT_DIR}"
-    - docker login -u hermsi -p"${DOCKER_HUB_TOKEN}"
+    - >
+      mkdir -p "${HOME}/.docker" &&
+      mv "${DOCKER_CONFIG_JSON}" "${HOME}/.docker/config.json" &&
+      chmod 0600 "${HOME}/.docker/config.json"
     - docker push "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
     - docker push "${IMAGE_NAME}:latest"
     - docker push "${IMAGE_NAME}:latest-${TIMESTAMP}"
   only:
     - master
+  parallel:
+    matrix:
+      - IMAGE_NAME: [ "hermsi/ark-server", "quay.io/hermsi1337/ark-server" ]
