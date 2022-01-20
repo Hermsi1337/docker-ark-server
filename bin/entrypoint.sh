@@ -11,7 +11,10 @@ function ensure_rights() {
   fi
 
   echo "...ensuring rights on ${TARGET}"
-  sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" ${TARGET}
+  sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" ${TARGET} \
+    || echo "... FAILED ENSURING RIGHTS - CONTINUING STARTUP"
+    # we continue to prevent a boot-failure through read-only files
+    # https://github.com/Hermsi1337/docker-ark-server/issues/34
 }
 
 function may_update() {
