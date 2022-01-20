@@ -7,6 +7,9 @@ This image always installs the latest version of ARK-Server currently avaialable
 Thus, the tags are reffering to the ARK-Server-Tools version which is used by the corresponding image.
 
 ## Usage
+### ⚠️ Windows / WSL Notice ⚠️
+**Mount the container volumes directly inside WSL's filesystem.** Mounting them inside a filesystem managed by Windows causes the installation to be painfully slow or even get stuck.
+
 ### Startup your ARK-Server
 #### Basic configuration
 The basic configuration of your server is done by using environment variables when starting the container:
