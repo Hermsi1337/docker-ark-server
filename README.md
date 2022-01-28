@@ -39,7 +39,7 @@ The basic configuration of your server is done by using environment variables wh
 I personally prefer `docker-compose` but for those of you, who want to run their own ARK-server without any "zip and zap", here you go:
 ```bash
 # You may want to change SESSION_NAME, ADMIN_PASSWORD or host-volume
-$ docker run -d --name="ark_server" --restart=always -v "${HOME}/ark-server:/app" -e SESSION_NAME="Awesome ARK is awesome" -e ADMIN_PASSWORD="FooB4r"
+$ docker run -d --name="ark_server" --restart=always -v "${HOME}/ark-server:/app" -e SESSION_NAME="Awesome ARK is awesome" -e ADMIN_PASSWORD="FooB4r" hermsi/ark-server:latest
 ```
 
 ##### `docker-compose`
