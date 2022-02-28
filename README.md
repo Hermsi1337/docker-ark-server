@@ -1,3 +1,7 @@
+[![Docker Pulls](https://img.shields.io/docker/pulls/hermsi/ark-server?label=hub.docker.com%20pulls&style=flat-square)](https://hub.docker.com/r/hermsi/ark-server)
+[![Docker Repository on Quay](https://img.shields.io/badge/Quay.io-Repository-blue)](https://quay.io/repository/hermsi1337/ark-server)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=T85UYT37P3YNJ&source=url)
+
 # Dockerize ARK managed with [ARK-Server-Tools](https://github.com/FezVrasta/ark-server-tools)
 You can use this image in order to start an ARK-Server for either public or private sessions.   
 The Server itself is managable by ARK-Server-Tools.
