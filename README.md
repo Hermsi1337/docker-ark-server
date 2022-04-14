@@ -124,3 +124,6 @@ Close file (`:wq`) and restart the container:
 ```bash
 $ docker restart ark_server
 ```
+
+## Sponsors
+[@Skyfay](https://github.com/Skyfay) - [skyfay.ch](https://skyfay.ch)
