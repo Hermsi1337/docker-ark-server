@@ -51,7 +51,7 @@ deploy:docker:dev:
       mv "${DOCKER_CONFIG_JSON}" "${HOME}/.docker/config.json" &&
       chmod 0600 "${HOME}/.docker/config.json"
     - docker push "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}"
-  only:
+  except:
     - master
   parallel:
     matrix:
