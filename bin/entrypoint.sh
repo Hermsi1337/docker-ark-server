@@ -11,7 +11,7 @@ function ensure_rights() {
   fi
 
   echo "...ensuring rights on ${TARGET}"
-  sudo chown -R "${STEAM_USER}":"${STEAM_GROUP}" ${TARGET} \
+  chown -R "${STEAM_USER}". "${TARGET}" \
     || echo "... FAILED ENSURING RIGHTS - CONTINUING STARTUP"
     # we continue to prevent a boot-failure through read-only files
     # https://github.com/Hermsi1337/docker-ark-server/issues/34
@@ -52,11 +52,6 @@ function copy_missing_file() {
   ensure_rights ${DESTINATION}
 }
 
-if [[ ! "$(id -u "${STEAM_USER}")" -eq "${STEAM_UID}" ]] || [[ ! "$(id -g "${STEAM_GROUP}")" -eq "${STEAM_GID}" ]]; then
-  sudo usermod -o -u "${STEAM_UID}" "${STEAM_USER}"
-  sudo groupmod -o -g "${STEAM_GID}" "${STEAM_GROUP}"
-fi
-
 # Always ensure correct rights on home and volume folder
 ensure_rights ""
 
@@ -90,14 +85,14 @@ create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${A
 echo "Setting up Arkmanager..."
 # setup arkmanager directories
 if [[ ! -d ${ARK_TOOLS_DIR} ]]; then
-  sudo mv "/etc/arkmanager" "${ARK_TOOLS_DIR}"
+  mv "/etc/arkmanager" "${ARK_TOOLS_DIR}"
   ensure_rights "${ARK_TOOLS_DIR}"
   rm -f "${ARK_TOOLS_DIR}/arkmanager.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
 fi
 
 # symlink arkmanager directories
-sudo rm -rf "/etc/arkmanager"
-sudo ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
+rm -rf "/etc/arkmanager"
+ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
 
 # copy from template to server volume
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkmanager.cfg"
@@ -120,16 +115,16 @@ if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
-  ${ARKMANAGER} install --verbose
+  su "${STEAM_USER}" -c "${ARKMANAGER} install --verbose"
 else
   may_update
 fi
 
-ACTIVE_CRONS="$(grep -v "^#" "${ARK_SERVER_VOLUME}/crontab" 2>/dev/null | wc -l)"
+ACTIVE_CRONS="$(grep -c -v "^#" "${ARK_SERVER_VOLUME}/crontab" 2>/dev/null)"
 if [[ ${ACTIVE_CRONS} -gt 0 ]]; then
   echo "Loading crontab..."
   crontab "${ARK_SERVER_VOLUME}/crontab"
-  sudo service cron start
+  service cron start
   echo "...done"
 else
   echo "No crontab set"
@@ -151,4 +146,4 @@ if [[ -n "${GAME_MOD_IDS}" ]]; then
   done
 fi
 
-exec ${ARKMANAGER} run --verbose ${args[@]}
+su "${STEAM_USER}" -c "${ARKMANAGER} run --verbose ${args[@]}"
