@@ -21,7 +21,8 @@ ENV         SESSION_NAME="Dockerized ARK Server by github.com/hermsi1337" \
             RCON_PORT="27020" \
             SERVER_LIST_PORT="27015" \
             STEAM_HOME="/home/${USER}" \
-            STEAM_USER="${USER}"
+            STEAM_USER="${USER}" \
+            STEAM_LOGIN="anonymous"
 
 ENV         ARK_TOOLS_DIR="${ARK_SERVER_VOLUME}/arkmanager"
 

@@ -4,19 +4,25 @@
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=T85UYT37P3YNJ&source=url)
 
 # Dockerize ARK managed with [ARK-Server-Tools](https://github.com/FezVrasta/ark-server-tools)
+
 You can use this image in order to start an ARK-Server for either public or private sessions.   
 The Server itself is managable by ARK-Server-Tools.
 
 ## Tags
+
 This image always installs the latest version of ARK-Server currently avaialable.   
 Thus, the tags are reffering to the ARK-Server-Tools version which is used by the corresponding image.
 
 ## Usage
+
 ### ⚠️ Windows / WSL Notice ⚠️
+
 **Mount the container volumes directly inside WSL's filesystem.** Mounting them inside a filesystem managed by Windows causes the installation to be painfully slow or even get stuck.
 
 ### Startup your ARK-Server
+
 #### Basic configuration
+
 The basic configuration of your server is done by using environment variables when starting the container:
 
 | Variable | Default value | Explanation |
@@ -40,7 +46,9 @@ The basic configuration of your server is done by using environment variables wh
 | GAME_MOD_IDS | `empty` |  Additional game-mods you want to install, seperated by comma. (e.g. GAME_MOD_IDS="487516323,487516324,487516325") |
 
 #### Get things runnning
+
 ##### `docker-run`
+
 I personally prefer `docker-compose` but for those of you, who want to run their own ARK-server without any "zip and zap", here you go:
 ```bash
 # You may want to change SESSION_NAME, ADMIN_PASSWORD or host-volume
@@ -48,6 +56,7 @@ $ docker run -d --name="ark_server" --restart=always -v "${HOME}/ark-server:/app
 ```
 
 ##### `docker-compose`
+
 In order to startup your own ARK-server with `docker-compose` - which I personally preffer over a simple `docker run` - you may adapt the following `docker-compose.yml`:
 ```yml
 version: '3'
@@ -89,6 +98,7 @@ $ docker-compose up -d
 ```
 
 ### Tweak configuration
+
 After your container is up and ARK is installed you can start tweaking your configuration.   
 Basically, you can modify every setting which ARK-Server-Tools are capable of.   
 For reference of the available commands check [their docs](https://github.com/FezVrasta/ark-server-tools#configuration).   
@@ -125,5 +135,29 @@ Close file (`:wq`) and restart the container:
 $ docker restart ark_server
 ```
 
+### Configure Steam login session
+  
+In order for `steamcmd` to respect your user's non-anonymous dlc's and stuff, you have to mount the steam-session inside the ark-server container.
+
+```yaml
+    volumes:
+      # # This setup is necessary if you have to download a non-anonymous appID or upload a steampipe build.
+      /path/to/steam/session:/home/steam/Steam
+```
+
+Afterwards change the environment-variable `STEAM_LOGIN` to your user:
+
+```yaml
+    environment:
+      STEAM_LOGIN: "hermsi1337"
+```
+
+Then, `arkmanager` will install / update `ark` using your provided login.
+
+⚠️ Upgrade-Information ⚠️    
+If you upgrade from a image-version prior to this timestamp `1656497302` you'll have to edit `line 15` in `arkmanager.cfg`.  
+Replace with: `steamlogin="${STEAM_LOGIN}"`
+
 ## Sponsors
+
 [@Skyfay](https://github.com/Skyfay) - [skyfay.ch](https://skyfay.ch)

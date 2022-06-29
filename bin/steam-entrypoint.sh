@@ -52,8 +52,8 @@ fi
 echo "_______________________________________"
 echo ""
 echo "# Ark Server - $(date)"
-echo "# UID ${STEAM_UID} - GID ${STEAM_GID}"
-echo "# ARGS ${args[*]}"
+echo "# RUNNING AS USER '${STEAM_USER}'"
+echo "# ARGS: ${args[*]}"
 echo "_______________________________________"
 
 ARKMANAGER="$(command -v arkmanager)"
