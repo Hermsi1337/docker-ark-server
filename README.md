@@ -155,7 +155,7 @@ Afterwards change the environment-variable `STEAM_LOGIN` to your user:
 Then, `arkmanager` will install / update `ark` using your provided login.
 
 ⚠️ Upgrade-Information ⚠️    
-If you upgrade from a image-version prior to this timestamp `1656497302` you'll have to edit `line 15` in `arkmanager.cfg`.  
+If you upgrade from an image-version prior to the timestamp `1656497302` you'll have to edit `line 15` in `arkmanager.cfg`.  
 Replace with: `steamlogin="${STEAM_LOGIN}"`
 
 ## Sponsors
