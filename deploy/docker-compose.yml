@@ -26,6 +26,7 @@ services:
       - BACKUP_ON_STOP=${BACKUP_ON_STOP}
       - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
       - WARN_ON_STOP=${WARN_ON_STOP}
+      - GAME_MOD_IDS=${GAME_MOD_IDS}
     ports:
       # Port for connections from ARK game client
       - "7777:7777/udp"

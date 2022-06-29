@@ -22,4 +22,4 @@ ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
 
 service cron start
 
-gosu "${STEAM_USER}" /steam-entrypoint.sh ${*}
+gosu "${STEAM_USER}" /steam-entrypoint.sh $*

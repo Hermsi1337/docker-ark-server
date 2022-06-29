@@ -3,7 +3,10 @@ FROM        cm2network/steamcmd:root
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
 ARG         ARK_TOOLS_VERSION="1.6.61a"
-ENV         SESSION_NAME="Dockerized ARK Server by github.com/hermsi1337" \
+ARG         HERMSI_VERSION="dev"
+
+ENV         HERMSI_VERSION="${HERMSI_VERSION}" \
+            SESSION_NAME="Dockerized ARK Server by github.com/hermsi1337" \
             SERVER_MAP="TheIsland" \
             SERVER_PASSWORD="YouShallNotPass" \
             ADMIN_PASSWORD="Th155houldD3f1n3tlyB3Chang3d" \

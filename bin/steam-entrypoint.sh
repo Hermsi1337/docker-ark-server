@@ -52,6 +52,7 @@ fi
 echo "_______________________________________"
 echo ""
 echo "# Ark Server - $(date)"
+echo "# HERMSI_VERSION: '${HERMSI_VERSION}'"
 echo "# RUNNING AS USER '${STEAM_USER}'"
 echo "# ARGS: ${args[*]}"
 echo "_______________________________________"
@@ -89,8 +90,6 @@ if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
   ${ARKMANAGER} install --verbose
-else
-  may_update
 fi
 
 crontab "${ARK_SERVER_VOLUME}/crontab"
@@ -110,5 +109,7 @@ if [[ -n "${GAME_MOD_IDS}" ]]; then
     echo "...done"
   done
 fi
+
+may_update
 
 exec "${ARKMANAGER}" run --verbose ${args[@]}
