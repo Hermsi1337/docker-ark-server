@@ -4,18 +4,10 @@ set -e
 
 [[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
 
-function ensure_rights() {
-  TARGET="${ARK_SERVER_VOLUME} ${STEAM_HOME}"
-  if [[ -n "${1}" ]]; then
-    TARGET="${1}"
-  fi
-
-  echo "...ensuring rights on ${TARGET}"
-  chown -R "${STEAM_USER}". "${TARGET}" \
-    || echo "... FAILED ENSURING RIGHTS - CONTINUING STARTUP"
-    # we continue to prevent a boot-failure through read-only files
-    # https://github.com/Hermsi1337/docker-ark-server/issues/34
-}
+if [[ "$(whoami)" != "${STEAM_USER}" ]]; then
+  echo "run this script as steam-user"
+  exit 1
+fi
 
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
@@ -24,7 +16,7 @@ function may_update() {
 
   echo "\$UPDATE_ON_START is 'true'..."
 
-  # auto checks if a update is needed, if yes, then update the server or mods 
+  # auto checks if a update is needed, if yes, then update the server or mods
   # (otherwise it just does nothing)
   ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart
 }
@@ -35,7 +27,6 @@ function create_missing_dir() {
     if [[ ! -d "${DIRECTORY}" ]]; then
       mkdir -p "${DIRECTORY}"
       echo "...successfully created ${DIRECTORY}"
-      ensure_rights "${DIRECTORY}"
     fi
   done
 }
@@ -48,19 +39,14 @@ function copy_missing_file() {
     cp -a "${SOURCE}" "${DESTINATION}"
     echo "...successfully copied ${SOURCE} to ${DESTINATION}"
   fi
-
-  ensure_rights ${DESTINATION}
 }
-
-# Always ensure correct rights on home and volume folder
-ensure_rights ""
 
 args=("$*")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
-  args=('--arkopt,-crossplay' "${args[@]}");
+  args=('--arkopt,-crossplay' "${args[@]}")
 fi
 if [[ "${DISABLE_BATTLEYE}" == "true" ]]; then
-  args=('--arkopt,-NoBattlEye' "${args[@]}");
+  args=('--arkopt,-NoBattlEye' "${args[@]}")
 fi
 
 echo "_______________________________________"
@@ -80,19 +66,6 @@ cd "${ARK_SERVER_VOLUME}"
 
 echo "Setting up folder and file structure..."
 create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging"
-
-
-echo "Setting up Arkmanager..."
-# setup arkmanager directories
-if [[ ! -d ${ARK_TOOLS_DIR} ]]; then
-  mv "/etc/arkmanager" "${ARK_TOOLS_DIR}"
-  ensure_rights "${ARK_TOOLS_DIR}"
-  rm -f "${ARK_TOOLS_DIR}/arkmanager.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
-fi
-
-# symlink arkmanager directories
-rm -rf "/etc/arkmanager"
-ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
 
 # copy from template to server volume
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkmanager.cfg"
@@ -115,20 +88,12 @@ if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
-  su "${STEAM_USER}" -c "${ARKMANAGER} install --verbose"
+  ${ARKMANAGER} install --verbose
 else
   may_update
 fi
 
-ACTIVE_CRONS="$(grep -c -v "^#" "${ARK_SERVER_VOLUME}/crontab" 2>/dev/null)"
-if [[ ${ACTIVE_CRONS} -gt 0 ]]; then
-  echo "Loading crontab..."
-  crontab "${ARK_SERVER_VOLUME}/crontab"
-  service cron start
-  echo "...done"
-else
-  echo "No crontab set"
-fi
+crontab "${ARK_SERVER_VOLUME}/crontab"
 
 if [[ -n "${GAME_MOD_IDS}" ]]; then
   echo "Installing mods: '${GAME_MOD_IDS}' ..."
@@ -146,4 +111,4 @@ if [[ -n "${GAME_MOD_IDS}" ]]; then
   done
 fi
 
-su "${STEAM_USER}" -c "${ARKMANAGER} run --verbose ${args[@]}"
+exec "${ARKMANAGER}" run --verbose ${args[@]}

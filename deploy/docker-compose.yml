@@ -13,7 +13,7 @@ services:
     #build:
     #  context: ../.
     volumes:
-      - ark-data:/app
+      - ${ARK_SERVER_VOLUME}:/app
     environment:
       - SESSION_NAME=${SESSION_NAME}
       - SERVER_MAP=${SERVER_MAP}

@@ -33,6 +33,8 @@ RUN         set -x && \
                                 libc6-i386 \
                                 lib32gcc-s1 \
                                 bzip2 \
+                                gosu \
+                                cron \
             && \
             curl -L "https://github.com/arkmanager/ark-server-tools/archive/v${ARK_TOOLS_VERSION}.tar.gz" \
                 | tar -xvzf - -C /tmp/ && \
@@ -51,5 +53,5 @@ EXPOSE      ${GAME_CLIENT_PORT}/udp ${UDP_SOCKET_PORT}/udp ${SERVER_LIST_PORT}/u
 VOLUME      ["${ARK_SERVER_VOLUME}"]
 WORKDIR     ${ARK_SERVER_VOLUME}
 
-ENTRYPOINT  ["/entrypoint.sh"]
+ENTRYPOINT  ["/docker-entrypoint.sh"]
 CMD         []
