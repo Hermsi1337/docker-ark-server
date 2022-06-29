@@ -34,29 +34,6 @@ build:docker:
     matrix:
       - IMAGE_NAME: [ "hermsi/ark-server" ]
 
-deploy:docker:dev:
-  stage: deploy
-  when: manual
-  script:
-    - >
-      docker build
-      --no-cache
-      --pull
-      --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}"
-      --tag "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}"
-      --file "${CI_PROJECT_DIR}/Dockerfile"
-      "${CI_PROJECT_DIR}"
-    - >
-      mkdir -p "${HOME}/.docker" &&
-      mv "${DOCKER_CONFIG_JSON}" "${HOME}/.docker/config.json" &&
-      chmod 0600 "${HOME}/.docker/config.json"
-    - docker push "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}"
-  except:
-    - master
-  parallel:
-    matrix:
-      - IMAGE_NAME: [ "hermsi/ark-server", "quay.io/hermsi1337/ark-server" ]
-
 deploy:docker:
   stage: deploy
   script:
