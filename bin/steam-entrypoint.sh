@@ -53,7 +53,7 @@ echo "_______________________________________"
 echo ""
 echo "# Ark Server - $(date)"
 echo "# HERMSI_VERSION: '${HERMSI_VERSION}'"
-echo "# RUNNING AS USER '${STEAM_USER}'"
+echo "# RUNNING AS USER '${STEAM_USER}' - '$(id -u)'"
 echo "# ARGS: ${args[*]}"
 echo "_______________________________________"
 
