@@ -13,7 +13,9 @@ services:
     #build:
     #  context: ../.
     volumes:
-      - ark-data:/app
+      # # This setup is necessary if you have to download a non-anonymous appID or upload a steampipe build.
+      # ${STEAM_SESSION_VOLUME}:/home/steam/Steam
+      - ${ARK_SERVER_VOLUME}:/app
     environment:
       - SESSION_NAME=${SESSION_NAME}
       - SERVER_MAP=${SERVER_MAP}
@@ -24,6 +26,7 @@ services:
       - BACKUP_ON_STOP=${BACKUP_ON_STOP}
       - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
       - WARN_ON_STOP=${WARN_ON_STOP}
+      - GAME_MOD_IDS=${GAME_MOD_IDS}
     ports:
       # Port for connections from ARK game client
       - "7777:7777/udp"

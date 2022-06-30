@@ -42,6 +42,7 @@ deploy:docker:
       --no-cache
       --pull
       --build-arg ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}"
+      --build-arg HERMSI_VERSION="${TIMESTAMP}"
       --tag "${IMAGE_NAME}:tools-${ARK_TOOLS_VERSION}"
       --tag "${IMAGE_NAME}:latest"
       --tag "${IMAGE_NAME}:latest-${TIMESTAMP}"
