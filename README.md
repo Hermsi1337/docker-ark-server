@@ -3,7 +3,7 @@
 [![Docker Repository on Quay](https://img.shields.io/badge/Quay.io-Repository-blue)](https://quay.io/repository/hermsi1337/ark-server)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=T85UYT37P3YNJ&source=url)
 
-# Dockerize ARK managed with [ARK-Server-Tools](https://github.com/FezVrasta/ark-server-tools)
+# Dockerize ARK managed with [ARK-Server-Tools](https://github.com/arkmanager/ark-server-tools)
 
 You can use this image in order to start an ARK-Server for either public or private sessions.   
 The Server itself is managable by ARK-Server-Tools.
@@ -146,17 +146,35 @@ $ docker restart ark_server
   
 In order for `steamcmd` to respect your user's non-anonymous dlc's and stuff, you have to mount the steam-session inside the ark-server container.
 
-```yaml
-    volumes:
-      # # This setup is necessary if you have to download a non-anonymous appID or upload a steampipe build.
-      /path/to/steam/session:/home/steam/Steam
+To do so, you first need to login with steamcmd in order to create a valid session:
+
+```shell
+$ root@myVPS:/var/storage/ark-server# mkdir Steam
+$ root@myVPS:/var/storage/ark-server# chown 1000.1000 Steam
+$ root@myVPS:/var/storage/ark-server# docker run --rm --entrypoint /home/steam/steamcmd/steamcmd.sh -it -u steam -v $(pwd)/Steam:/home/steam/Steam hermsi/ark-server '+login YOUR_STEAM_USERNAME "YOUR_STEAM_PASSWORD"'
+Redirecting stderr to '/home/steam/Steam/logs/stderr.txt'
+[  0%] Checking for available updates...
+[----] Verifying installation...
+Steam Console Client (c) Valve Corporation - version 1654574676
+-- type 'quit' to exit --
+Loading Steam API...OK
+Logging in user 'YOUR_STEAM_USERNAME' to Steam Public...
+Enter the current code from your Steam Guard Mobile Authenticator app
+Two-factor code:FOOBAR
+OK
+Waiting for client config...OK
+Waiting for user info...OK
+
+Steam>quit
 ```
 
-Afterwards change the environment-variable `STEAM_LOGIN` to your user:
+Afterwards, set the env-var `STEAM_LOGIN` to your user and mount the newly created `Steam`-directory inside your Ark-container:
 
 ```yaml
     environment:
-      STEAM_LOGIN: "hermsi1337"
+      STEAM_LOGIN: "YOUR_STEAM_USERNAME"
+    volumes:
+      ./Steam:/home/steam/Steam:rw
 ```
 
 Then, `arkmanager` will install / update `ark` using your provided login.

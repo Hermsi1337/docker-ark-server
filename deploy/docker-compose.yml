@@ -13,10 +13,12 @@ services:
     #build:
     #  context: ../.
     volumes:
-      # # This setup is necessary if you have to download a non-anonymous appID or upload a steampipe build.
+      # # This setup is necessary if you have to download a non-anonymous appID/modID
       # ${STEAM_SESSION_VOLUME}:/home/steam/Steam
       - ${ARK_SERVER_VOLUME}:/app
     environment:
+      # # This setup is necessary if you have to download a non-anonymous appID/modID
+      #- STEAM_LOGIN=${STEAM_LOGIN}
       - SESSION_NAME=${SESSION_NAME}
       - SERVER_MAP=${SERVER_MAP}
       - SERVER_PASSWORD=${SERVER_PASSWORD}
