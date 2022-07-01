@@ -103,34 +103,41 @@ After your container is up and ARK is installed you can start tweaking your conf
 Basically, you can modify every setting which ARK-Server-Tools are capable of.   
 For reference of the available commands check [their docs](https://github.com/FezVrasta/ark-server-tools#configuration).   
 
-The main config files are located at the following path in the container: 
+The main config files are located at the following path in the container:
+
 * `/app/server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini`   
 * `/app/server/ShooterGame/Saved/Config/LinuxServer/Game.ini`
 
 You can easily apply your changes directly into these files.
 
 Alternatively, it is possible to run any available command with ARK-Server-Tools and apply your changes that way:
+
 ```bash
-$ docker exec ark_server arkmanager status
-$ docker exec ark_server arkmanager update --force
-$ docker exec ark_server arkmanager installmods
+$ docker exec -u steam ark_server arkmanager status
+$ docker exec -u steam ark_server arkmanager update --force
+$ docker exec -u steam ark_server arkmanager installmods
 ```
+
 For a full list of all available commands [check here](https://github.com/FezVrasta/ark-server-tools#commands-acting-on-instances)
 
 ### Add cronjobs
+
 It is also possible to add cronjobs inside the cointainer. You could use the crontab for update- or backup-stuff.   
 In order to do so, edit the crontab-file located direct in the server-volume.
+
 ```bash
 $ vim "${HOME}/ark-server/crontab"
 ```
 
 Add your desired cronjobs with valid syntax:
+
 ```bash
 0 0 * * * arkmanager update --warn --update-mods >> ${SERVER_VOLUME}/log/crontab.log 2>&1
 0 0 * * * arkmanager backup >> ${SERVER_VOLUME}/log/crontab.log 2>&1
 ````
 
 Close file (`:wq`) and restart the container:
+
 ```bash
 $ docker restart ark_server
 ```
