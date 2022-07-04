@@ -3,9 +3,9 @@ FROM        cm2network/steamcmd:root
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
 ARG         ARK_TOOLS_VERSION="1.6.61a"
-ARG         HERMSI_VERSION="dev"
+ARG         IMAGE_VERSION="dev"
 
-ENV         HERMSI_VERSION="${HERMSI_VERSION}" \
+ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             SESSION_NAME="Dockerized ARK Server by github.com/hermsi1337" \
             SERVER_MAP="TheIsland" \
             SERVER_PASSWORD="YouShallNotPass" \
