@@ -12,9 +12,10 @@ chown "${STEAM_USER}". "${ARK_SERVER_VOLUME}" || echo "Failed setting rights on 
 
 if [[ ! -d ${ARK_TOOLS_DIR} ]]; then
   mv "/etc/arkmanager" "${ARK_TOOLS_DIR}"
-  chown -R "${STEAM_USER}". "${ARK_TOOLS_DIR}"
   rm -f "${ARK_TOOLS_DIR}/arkmanager.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
 fi
+
+chown -R "${STEAM_USER}". "${ARK_TOOLS_DIR}" || echo "Failed setting rights on ${ARK_TOOLS_DIR}, continuing startup..."
 
 # symlink arkmanager directories
 rm -rf "/etc/arkmanager"
