@@ -2,7 +2,7 @@ FROM        cm2network/steamcmd:root
 
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
-ARG         ARK_TOOLS_VERSION="1.6.61a"
+ARG         ARK_TOOLS_VERSION="1.6.65"
 ARG         IMAGE_VERSION="dev"
 
 ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
