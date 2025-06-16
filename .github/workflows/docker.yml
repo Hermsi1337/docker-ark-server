@@ -5,13 +5,15 @@ on:
     branches:
       - '**'
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # every monday at 02:00 UTC
 
 env:
   IMAGE_NAME: hermsi/ark-server
 
 jobs:
   build:
-    if: github.ref != 'refs/heads/master'
+    if: github.ref != 'refs/heads/master' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -53,7 +55,7 @@ jobs:
             "${{ github.workspace }}"
 
   deploy:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     strategy:
       matrix:
