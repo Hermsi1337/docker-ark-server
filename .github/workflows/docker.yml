@@ -1,0 +1,110 @@
+name: Build and Deploy Docker
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # every monday at 02:00 UTC
+
+env:
+  IMAGE_NAME: hermsi/ark-server
+
+jobs:
+  build:
+    if: github.ref != 'refs/heads/master' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        IMAGE_NAME: [ "hermsi/ark-server" ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y w3m curl jq gawk grep bash
+
+      - name: Get ARK Tools Version
+        id: ark_tools
+        run: |
+          ARK_TOOLS_VERSION=$(curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/tags" | jq -r '.[0].name' | egrep -o "[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?")
+          echo "ARK_TOOLS_VERSION=$ARK_TOOLS_VERSION" >> $GITHUB_ENV
+
+      - name: Bash Syntax Check
+        run: |
+          find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
+
+      - name: Set timestamp
+        run: echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+            --no-cache \
+            --pull \
+            --build-arg ARK_TOOLS_VERSION="${{ env.ARK_TOOLS_VERSION }}" \
+            --tag "${{ matrix.IMAGE_NAME }}:tools-${{ env.ARK_TOOLS_VERSION }}" \
+            --tag "${{ matrix.IMAGE_NAME }}:latest" \
+            --tag "${{ matrix.IMAGE_NAME }}:latest-${{ env.TIMESTAMP }}" \
+            --file "${{ github.workspace }}/Dockerfile" \
+            "${{ github.workspace }}"
+
+  deploy:
+    if: github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        IMAGE_NAME: [ "hermsi/ark-server", "quay.io/hermsi1337/ark-server" ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y w3m curl jq gawk grep bash
+
+      - name: Get ARK Tools Version
+        id: ark_tools
+        run: |
+          ARK_TOOLS_VERSION=$(curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/tags" | jq -r '.[0].name' | egrep -o "[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?")
+          echo "ARK_TOOLS_VERSION=$ARK_TOOLS_VERSION" >> $GITHUB_ENV
+
+      - name: Bash Syntax Check
+        run: |
+          find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
+
+      - name: Set timestamp
+        run: echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Write Docker config.json
+        run: |
+          mkdir -p $HOME/.docker
+          echo "${{ secrets.DOCKER_CONFIG_JSON }}" > $HOME/.docker/config.json
+          chmod 0600 $HOME/.docker/config.json
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+            --no-cache \
+            --pull \
+            --build-arg ARK_TOOLS_VERSION="${{ env.ARK_TOOLS_VERSION }}" \
+            --build-arg IMAGE_VERSION="${{ env.TIMESTAMP }}" \
+            --tag "${{ matrix.IMAGE_NAME }}:tools-${{ env.ARK_TOOLS_VERSION }}" \
+            --tag "${{ matrix.IMAGE_NAME }}:latest" \
+            --tag "${{ matrix.IMAGE_NAME }}:latest-${{ env.TIMESTAMP }}" \
+            --file "${{ github.workspace }}/Dockerfile" \
+            "${{ github.workspace }}"
+
+      - name: Push Docker Images
+        run: |
+          docker push "${{ matrix.IMAGE_NAME }}:tools-${{ env.ARK_TOOLS_VERSION }}"
+          docker push "${{ matrix.IMAGE_NAME }}:latest"
+          docker push "${{ matrix.IMAGE_NAME }}:latest-${{ env.TIMESTAMP }}"
