@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y w3m curl jq gawk grep bash
+          sudo apt install -y curl jq grep
 
       - name: Get ARK Tools Version
         id: ark_tools
@@ -69,7 +69,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y w3m curl jq gawk grep bash
+          sudo apt install -y curl jq grep
 
       - name: Get ARK Tools Version
         id: ark_tools
