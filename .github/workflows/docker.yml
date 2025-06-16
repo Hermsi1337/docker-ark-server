@@ -87,7 +87,7 @@ jobs:
       - name: Write Docker config.json
         run: |
           mkdir -p $HOME/.docker
-          echo "${{ secrets.DOCKER_CONFIG_JSON }}" > $HOME/.docker/config.json
+          echo '${{ secrets.DOCKER_CONFIG_JSON }}' > $HOME/.docker/config.json
           chmod 0600 $HOME/.docker/config.json
 
       - name: Build Docker Image
