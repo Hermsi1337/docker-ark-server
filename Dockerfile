@@ -18,6 +18,7 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             WARN_ON_STOP="true" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
+            ARK_SERVER_TOOLS_UPDATE_ARGS="--verbose --update-mods --backup --no-autostart" \
             TEMPLATE_DIRECTORY="/conf.d" \
             GAME_CLIENT_PORT="7777" \
             UDP_SOCKET_PORT="7778" \
@@ -39,6 +40,7 @@ RUN         set -x && \
                                 bzip2 \
                                 gosu \
                                 cron \
+                                pcregrep \
             && \
             curl -L "https://github.com/arkmanager/ark-server-tools/archive/v${ARK_TOOLS_VERSION}.tar.gz" \
                 | tar -xvzf - -C /tmp/ && \

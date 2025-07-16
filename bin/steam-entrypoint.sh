@@ -18,7 +18,7 @@ function may_update() {
 
   # auto checks if a update is needed, if yes, then update the server or mods
   # (otherwise it just does nothing)
-  ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart
+  ${ARKMANAGER} update ${ARK_SERVER_TOOLS_UPDATE_ARGS}
 }
 
 function create_missing_dir() {
