@@ -1,6 +1,9 @@
 name: Build and Deploy Docker
 
 on:
+  pull_request:
+    branches:
+      - master
   push:
     branches:
       - '**'
@@ -110,7 +113,7 @@ jobs:
           docker push "${{ matrix.IMAGE_NAME }}:latest-${{ env.TIMESTAMP }}"
 
   pr_publish:
-    if: ${{ github.event.label.name == 'publish-preview' }}
+    if: contains(github.event.pull_request.labels.*.name, 'publish-preview')
     runs-on: ubuntu-latest
     strategy:
       matrix:
