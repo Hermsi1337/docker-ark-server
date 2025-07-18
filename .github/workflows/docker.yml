@@ -110,7 +110,7 @@ jobs:
           docker push "${{ matrix.IMAGE_NAME }}:latest-${{ env.TIMESTAMP }}"
 
   pr_publish:
-    if: contains(toJson(github.event.pull_request.labels.*.name), 'deploy')
+    if: contains(toJson(github.event.pull_request.labels.*.name), 'publish-preview')
     runs-on: ubuntu-latest
     strategy:
       matrix:
