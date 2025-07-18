@@ -168,7 +168,7 @@ Waiting for user info...OK
 Steam>quit
 ```
 
-Afterwards, set the env-var `STEAM_LOGIN` to your user and mount the newly created `Steam`-directory inside your Ark-container:
+Afterward, set the env-var `STEAM_LOGIN` to your user and mount the newly created `Steam`-directory inside your Ark-container:
 
 ```yaml
     environment:
