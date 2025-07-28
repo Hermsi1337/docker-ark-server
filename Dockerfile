@@ -39,6 +39,7 @@ RUN         set -x && \
                                 bzip2 \
                                 gosu \
                                 cron \
+                                procps \
             && \
             curl -L "https://github.com/arkmanager/ark-server-tools/archive/v${ARK_TOOLS_VERSION}.tar.gz" \
                 | tar -xvzf - -C /tmp/ && \
