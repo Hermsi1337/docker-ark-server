@@ -2,7 +2,7 @@ FROM        cm2network/steamcmd:root
 
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
-ARG         ARK_TOOLS_VERSION="1.6.65"
+ARG         ARK_TOOLS_VERSION="1.6.67"
 ARG         IMAGE_VERSION="dev"
 
 ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
@@ -18,7 +18,8 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             WARN_ON_STOP="true" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
-            ARK_SERVER_TOOLS_UPDATE_ARGS="--verbose --update-mods --backup --no-autostart" \
+            BETA="" \
+            BETA_PASSWORD="" \
             TEMPLATE_DIRECTORY="/conf.d" \
             GAME_CLIENT_PORT="7777" \
             UDP_SOCKET_PORT="7778" \

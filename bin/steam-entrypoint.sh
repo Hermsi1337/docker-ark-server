@@ -18,7 +18,7 @@ function may_update() {
 
   # auto checks if a update is needed, if yes, then update the server or mods
   # (otherwise it just does nothing)
-  ${ARKMANAGER} update ${ARK_SERVER_TOOLS_UPDATE_ARGS}
+  ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart ${BETA_ARGS[@]}
 }
 
 function create_missing_dir() {
@@ -48,6 +48,7 @@ fi
 if [[ "${DISABLE_BATTLEYE}" == "true" ]]; then
   args=('--arkopt,-NoBattlEye' "${args[@]}")
 fi
+BETA_ARGS=(${BETA:+--beta=${BETA}} ${BETA_PASSWORD:+--betapassword=${BETA_PASSWORD}})
 
 echo "_______________________________________"
 echo ""
@@ -55,6 +56,9 @@ echo "# Ark Server - $(date)"
 echo "# IMAGE_VERSION: '${IMAGE_VERSION}'"
 echo "# RUNNING AS USER '${STEAM_USER}' - '$(id -u)'"
 echo "# ARGS: ${args[*]}"
+if [ -n "${BETA}" ]; then
+  echo "# BETA: ${BETA}"
+fi
 echo "_______________________________________"
 
 ARKMANAGER="$(command -v arkmanager)"
@@ -89,7 +93,7 @@ if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
-  ${ARKMANAGER} install --verbose
+  ${ARKMANAGER} install --verbose ${BETA_ARGS[@]}
 fi
 
 crontab "${ARK_SERVER_VOLUME}/crontab"
