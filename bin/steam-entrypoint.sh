@@ -83,7 +83,7 @@ echo "_______________________________________"
 
 ARKMANAGER="$(command -v arkmanager)"
 [[ -x "${ARKMANAGER}" ]] || (
-  echo "Arkamanger is missing"
+  echo "Arkmanger is missing"
   exit 1
 )
 
