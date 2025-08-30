@@ -47,13 +47,19 @@ function needs_install() {
     return 0
   fi
 
+  # Backwards compatibility
+  if [[ -f "${ARK_SERVER_VOLUME}/server/version.txt" ]]; then
+    echo "${ARK_SERVER_VOLUME}/server/version.txt found."
+    return 1
+  fi
+
   if [[ ! -s "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_376030.acf" ]]; then
-    echo "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_376030.acf ..."
+    echo "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_376030.acf not found ..."
     return 0
   fi
 
-  if [[ ! -d "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer" ]]; then
-    echo "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer ..."
+  if [[ ! -x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer" ]]; then
+    echo "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer not found ..."
     return 0
   fi
   return 1
