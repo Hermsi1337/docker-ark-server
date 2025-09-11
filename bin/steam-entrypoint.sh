@@ -48,7 +48,7 @@ fi
 if [[ "${DISABLE_BATTLEYE}" == "true" ]]; then
   args=('--arkopt,-NoBattlEye' "${args[@]}")
 fi
-BETA_ARGS=(${BETA:+--beta=${BETA}} ${BETA_PASSWORD:+--betapassword=${BETA_PASSWORD}})
+BETA_ARGS=(${BETA:+--beta=${BETA}} ${BETA_ACCESSCODE:+--betapassword=${BETA_ACCESSCODE}})
 
 echo "_______________________________________"
 echo ""
