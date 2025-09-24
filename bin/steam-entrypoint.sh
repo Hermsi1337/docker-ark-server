@@ -148,4 +148,12 @@ fi
 
 may_update
 
-exec "${ARKMANAGER}" run --verbose ${args[@]}
+pids=()
+for INSTANCE in ${ARK_SERVER_VOLUME}/arkmanager/instances/*.cfg; do
+  if [[ -f "${INSTANCE}" ]]; then
+    echo "Run instance ${INSTANCE%.*} ..."
+    ${ARKMANAGER} run @$(basename "${INSTANCE%.*}") --verbose ${args[@]} &
+    pids+=($!)
+  fi
+done
+wait ${pids[@]}
