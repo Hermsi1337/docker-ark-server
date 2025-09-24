@@ -2,7 +2,7 @@ FROM        cm2network/steamcmd:root
 
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
-ARG         ARK_TOOLS_VERSION="1.6.65"
+ARG         ARK_TOOLS_VERSION="5aec353e2e4b2fc17a6b6e3964d606d809c0f233"
 ARG         IMAGE_VERSION="dev"
 
 ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
@@ -18,7 +18,8 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             WARN_ON_STOP="true" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
-            ARK_SERVER_TOOLS_UPDATE_ARGS="--verbose --update-mods --backup --no-autostart" \
+            BETA="" \
+            BETA_ACCESSCODE="" \
             TEMPLATE_DIRECTORY="/conf.d" \
             GAME_CLIENT_PORT="7777" \
             UDP_SOCKET_PORT="7778" \
@@ -43,7 +44,7 @@ RUN         set -x && \
                                 pcregrep \
                                 procps \
             && \
-            curl -L "https://github.com/arkmanager/ark-server-tools/archive/v${ARK_TOOLS_VERSION}.tar.gz" \
+            curl -L "https://github.com/arkmanager/ark-server-tools/archive/${ARK_TOOLS_VERSION}.tar.gz" \
                 | tar -xvzf - -C /tmp/ && \
             bash -c "cd /tmp/ark-server-tools-${ARK_TOOLS_VERSION}/tools && bash -x install.sh ${USER}" && \
             ln -s /usr/local/bin/arkmanager /usr/bin/arkmanager && \

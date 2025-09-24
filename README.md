@@ -44,6 +44,7 @@ The basic configuration of your server is done by using environment variables wh
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list port |
 | GAME_MOD_IDS | `empty` |  Additional game-mods you want to install, seperated by comma. (e.g. GAME_MOD_IDS=487516323,487516324,487516325) |
+| BETA | `empty` | Specify the beta version if necessary. (e.g. BETA=preaquatica) |
 
 #### Get things runnning
 
