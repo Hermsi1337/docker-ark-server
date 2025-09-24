@@ -17,6 +17,12 @@ fi
 
 chown -R "${STEAM_USER}": "${ARK_TOOLS_DIR}" || echo "Failed setting rights on ${ARK_TOOLS_DIR}, continuing startup..."
 
+if [[ ! -d /cluster ]]; then
+  mkdir -p "/cluster"
+fi
+
+chown "${STEAM_USER}": "/cluster" || echo "Failed setting rights on /cluster, continuing startup..."
+
 # symlink arkmanager directories
 rm -rf "/etc/arkmanager"
 ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
