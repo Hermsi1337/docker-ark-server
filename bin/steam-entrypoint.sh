@@ -93,7 +93,10 @@ if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
-  ${ARKMANAGER} install --verbose ${BETA_ARGS[@]}
+  if ! ${ARKMANAGER} install --verbose ${BETA_ARGS[@]}; then
+    echo "Installation failed"
+    exit 1
+  fi
 fi
 
 crontab "${ARK_SERVER_VOLUME}/crontab"
