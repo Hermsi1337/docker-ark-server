@@ -1,0 +1,63 @@
+name: Build and Deploy Docker
+
+on:
+  pull_request:
+    branches:
+      - master
+
+env:
+  IMAGE_NAME: hermsi/ark-server
+
+jobs:
+  publish_preview:
+    if: github.ref != 'refs/heads/master'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        IMAGE_NAME: ["hermsi/ark-server", "quay.io/hermsi1337/ark-server" ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y curl jq grep
+
+      - name: Get ARK Tools Version
+        id: ark_tools
+        run: |
+          ARK_TOOLS_VERSION=$(curl -s https://api.github.com/repos/arkmanager/ark-server-tools/commits | jq '.[0].sha' | cut -d '"' -f 2)
+        # ARK_TOOLS_VERSION=$(curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/tags" | jq -r '.[0].name' | egrep -o "[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?")
+          echo "ARK_TOOLS_VERSION=$ARK_TOOLS_VERSION" >> $GITHUB_ENV
+
+      - name: Bash Syntax Check
+        run: |
+          find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
+
+      - name: Set timestamp
+        run: echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Write Docker config.json
+        run: |
+          mkdir -p $HOME/.docker
+          echo '${{ secrets.DOCKER_CONFIG_JSON }}' > $HOME/.docker/config.json
+          chmod 0600 $HOME/.docker/config.json
+
+      - name: Build Docker Image
+        run: |
+          PR_TAG="pr-${{ github.event.pull_request.number }}"
+          docker build \
+            --no-cache \
+            --pull \
+            --build-arg ARK_TOOLS_VERSION="${{ env.ARK_TOOLS_VERSION }}" \
+            --tag "${{ matrix.IMAGE_NAME }}:$PR_TAG" \
+            --file "${{ github.workspace }}/Dockerfile" \
+            "${{ github.workspace }}"
+
+      - name: Push Docker Images
+        run: |
+          PR_TAG="pr-${{ github.event.pull_request.number }}"
+          docker push "${{ matrix.IMAGE_NAME }}:$PR_TAG"
