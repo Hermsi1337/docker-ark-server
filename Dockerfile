@@ -8,6 +8,7 @@ ARG         IMAGE_VERSION="dev"
 ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             SESSION_NAME="Dockerized ARK Server by github.com/hermsi1337" \
             SERVER_MAP="TheIsland" \
+            SERVER_MAP_MOD_ID="" \
             SERVER_PASSWORD="YouShallNotPass" \
             ADMIN_PASSWORD="Th155houldD3f1n3tlyB3Chang3d" \
             MAX_PLAYERS="20" \
@@ -19,6 +20,8 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             PRE_UPDATE_BACKUP="true" \
             WARN_ON_STOP="true" \
             SKIP_DISK_CHECK="false" \
+            CLUSTER_ID="MyCluster" \
+            SUB_INSTANCE_KEYS="" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
             BETA="" \
@@ -62,7 +65,7 @@ COPY        conf.d  ${TEMPLATE_DIRECTORY}
 
 EXPOSE      ${GAME_CLIENT_PORT}/udp ${UDP_SOCKET_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 
-VOLUME      ["${ARK_SERVER_VOLUME}"]
+VOLUME      ["${ARK_SERVER_VOLUME}", "/cluster"]
 WORKDIR     ${ARK_SERVER_VOLUME}
 
 ENTRYPOINT  ["/docker-entrypoint.sh"]

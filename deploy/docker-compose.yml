@@ -1,5 +1,6 @@
 volumes:
   ark-data:
+  ark-cluster:
 
 services:
   server:
@@ -17,6 +18,9 @@ services:
       # # This setup is necessary if you have to download a non-anonymous appID/modID
       #- ${STEAM_SESSION_VOLUME}:/home/steam/Steam
       - ${ARK_SERVER_VOLUME}:/app
+      # # Share this volume (and CLUSTER_ID) between containers to form a cluster,
+      # # see the README section "Cluster and multi-map support"
+      #- ${ARK_CLUSTER_VOLUME}:/cluster
     environment:
       # # This setup is necessary if you have to download a non-anonymous appID/modID
       #- STEAM_LOGIN=${STEAM_LOGIN}
@@ -33,6 +37,11 @@ services:
       - PUID=${PUID:-}
       - PGID=${PGID:-}
       - ARK_EXTRA_OPTS=${ARK_EXTRA_OPTS}
+      # # Cluster / multi-map settings, see the README section
+      # # "Cluster and multi-map support" for all SUB_<KEY>_* variables
+      #- CLUSTER_ID=MyCluster
+      #- SUB_INSTANCE_KEYS=Fjordur,Caballus_P
+      #- SUB_Caballus_P_SERVER_MAP_MOD_ID=1679826889
     ports:
       # Port for connections from ARK game client
       - "7777:7777/udp"
