@@ -43,9 +43,10 @@ RUN         set -x && \
                                 cron \
                                 pcregrep \
                                 procps \
-            commit=$([ "${ARK_TOOLS_VERSION#v}" != "${ARK_TOOLS_VERSION}" ] && curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/git/refs/tags/${ARK_TOOLS_VERSION}" | sed -n 's/^ *"sha": "\(.*\)",.*/\1/p' || echo -n "${ARK_TOOLS_VERSION}") && \
-            curl -sL https://raw.githubusercontent.com/arkmanager/ark-server-tools/master/netinstall.sh | \
-            sed -re "s/^  doInstallFromRelease/  doInstallFromCommit ${commit}/" | bash -s ${USER} && \
+            && \
+            opt=$([ "${ARK_TOOLS_VERSION#v}" != "${ARK_TOOLS_VERSION}" ] && echo -n "--tag" || echo -n "--commit") && \
+            curl -sL https://raw.githubusercontent.com/MusclePr/ark-server-tools/refs/heads/feature/netinstall-commit-option/netinstall.sh | \
+            bash -s ${USER} ${opt}=${ARK_TOOLS_VERSION} && \
             ln -s /usr/local/bin/arkmanager /usr/bin/arkmanager && \
             install -d -o ${USER} ${ARK_SERVER_VOLUME} && \
             su ${USER} -c "bash -x ${STEAMCMDDIR}/steamcmd.sh +login anonymous +quit" && \
