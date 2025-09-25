@@ -43,14 +43,14 @@ RUN         set -x && \
                                 cron \
                                 pcregrep \
                                 procps \
-                                git \
             && \
-            git clone https://github.com/arkmanager/ark-server-tools.git /tmp/ark-server-tools && \
-            bash -c "cd /tmp/ark-server-tools && git checkout '${ARK_TOOLS_VERSION}' && bash -x tools/install.sh '${USER}'" && \
+            opt=$([ "${ARK_TOOLS_VERSION#v}" != "${ARK_TOOLS_VERSION}" ] && echo -n "--tag" || echo -n "--commit") && \
+            curl -sL https://raw.githubusercontent.com/arkmanager/ark-server-tools/refs/heads/master/netinstall.sh | \
+            bash -s ${USER} ${opt}=${ARK_TOOLS_VERSION} && \
             ln -s /usr/local/bin/arkmanager /usr/bin/arkmanager && \
             install -d -o ${USER} ${ARK_SERVER_VOLUME} && \
             su ${USER} -c "bash -x ${STEAMCMDDIR}/steamcmd.sh +login anonymous +quit" && \
-            apt-get purge git -y && apt-get -qq autoclean && apt-get -qq autoremove && apt-get -qq clean && \
+            apt-get -qq autoclean && apt-get -qq autoremove && apt-get -qq clean && \
             rm -rf /tmp/* /var/cache/*
 
 COPY        bin/    /
