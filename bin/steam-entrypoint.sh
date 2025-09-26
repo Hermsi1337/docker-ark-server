@@ -41,6 +41,30 @@ function copy_missing_file() {
   fi
 }
 
+function needs_install() {
+  if [[ ! -d "${ARK_SERVER_VOLUME}/server" ]]; then
+    echo "${ARK_SERVER_VOLUME}/server not found ..."
+    return 0
+  fi
+
+  # Backwards compatibility
+  if [[ -f "${ARK_SERVER_VOLUME}/server/version.txt" ]]; then
+    echo "${ARK_SERVER_VOLUME}/server/version.txt found."
+    return 1
+  fi
+
+  if [[ ! -s "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_376030.acf" ]]; then
+    echo "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_376030.acf not found ..."
+    return 0
+  fi
+
+  if [[ ! -x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer" ]]; then
+    echo "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer not found ..."
+    return 0
+  fi
+  return 1
+}
+
 args=("$*")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
   args=('--arkopt,-crossplay' "${args[@]}")
@@ -63,7 +87,7 @@ echo "_______________________________________"
 
 ARKMANAGER="$(command -v arkmanager)"
 [[ -x "${ARKMANAGER}" ]] || (
-  echo "Arkamanger is missing"
+  echo "Arkmanger is missing"
   exit 1
 )
 
@@ -82,7 +106,7 @@ copy_missing_file "${TEMPLATE_DIRECTORY}/crontab" "${ARK_SERVER_VOLUME}/crontab"
 [[ -L "${ARK_SERVER_VOLUME}/GameUserSettings.ini" ]] ||
   ln -s ./server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini GameUserSettings.ini
 
-if [[ ! -d ${ARK_SERVER_VOLUME}/server ]] || [[ ! -f ${ARK_SERVER_VOLUME}/server/version.txt ]]; then
+if needs_install; then
   echo "No game files found. Installing..."
 
   create_missing_dir \
