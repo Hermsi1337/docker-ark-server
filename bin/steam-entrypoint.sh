@@ -42,26 +42,31 @@ function copy_missing_file() {
 }
 
 function needs_install() {
-  if [[ ! -d "${ARK_SERVER_VOLUME}/server" ]]; then
-    echo "${ARK_SERVER_VOLUME}/server not found ..."
+  local SERVER_DIR="${ARK_SERVER_VOLUME}/server"
+  if [ ! -d "${SERVER_DIR}" ]; then
+    echo "${SERVER_DIR} not found ..."
     return 0
   fi
 
   # Backwards compatibility
-  if [[ -f "${ARK_SERVER_VOLUME}/server/version.txt" ]]; then
-    echo "${ARK_SERVER_VOLUME}/server/version.txt found."
+  local VERSION_FILE="${SERVER_DIR}/version.txt"
+  if [ -f "${VERSION_FILE}" ]; then
+    echo "Already installed. (found ${VERSION_FILE})"
     return 1
   fi
 
-  if [[ ! -s "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_376030.acf" ]]; then
-    echo "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_376030.acf not found ..."
-    return 0
-  fi
+  local INSTALLED_FILES=(
+    "${SERVER_DIR}/steamapps/appmanifest_376030.acf"
+    "${SERVER_DIR}/ShooterGame/Binaries/Linux/ShooterGameServer"
+  )
+  for FILE in "${INSTALLED_FILES[@]}"; do
+    if [ ! -s "${FILE}" ]; then
+      echo "${FILE} is not complete ..."
+      return 0
+    fi
+  done
 
-  if [[ ! -x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer" ]]; then
-    echo "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer not found ..."
-    return 0
-  fi
+  echo "Already installed."
   return 1
 }
 
@@ -87,7 +92,7 @@ echo "_______________________________________"
 
 ARKMANAGER="$(command -v arkmanager)"
 [[ -x "${ARKMANAGER}" ]] || (
-  echo "Arkmanger is missing"
+  echo "Arkmanager is missing"
   exit 1
 )
 
