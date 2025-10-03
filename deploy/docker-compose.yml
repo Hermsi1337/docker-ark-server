@@ -1,5 +1,6 @@
 volumes:
   ark-data:
+  ark-cluster:
 
 services:
   server:
@@ -13,29 +14,60 @@ services:
     volumes:
       # # This setup is necessary if you have to download a non-anonymous appID/modID
       # ${STEAM_SESSION_VOLUME}:/home/steam/Steam
-      - ${ARK_SERVER_VOLUME}:/app
-      - ./cluster:/cluster
+      - ${VOLUME_APP}:/app
+      - ${VOLUME_CLUSTER}:/cluster
     environment:
+      # === Global settings ===
       # # This setup is necessary if you have to download a non-anonymous appID/modID
       #- STEAM_LOGIN=${STEAM_LOGIN}
+      - UPDATE_ON_START=${UPDATE_ON_START}
+      - BACKUP_ON_STOP=${BACKUP_ON_STOP}
+      - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
+      - WARN_ON_STOP=${WARN_ON_STOP}
+      #- BETA=preaquatica
+      # Cluster settings
+      - CLUSTER_ID=MyCluster
+
+      # === Main instance settings ===
       - SESSION_NAME=${SESSION_NAME}
       - SERVER_MAP=${SERVER_MAP}
       - SERVER_PASSWORD=${SERVER_PASSWORD}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - MAX_PLAYERS=${MAX_PLAYERS}
-      - UPDATE_ON_START=${UPDATE_ON_START}
-      - BACKUP_ON_STOP=${BACKUP_ON_STOP}
-      - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
-      - WARN_ON_STOP=${WARN_ON_STOP}
       - GAME_MOD_IDS=${GAME_MOD_IDS}
+      # Main instance ports as the offset, followed by the sub instance ports
+      - GAME_CLIENT_PORT=7777  # sub instances will use +2 increments
+      - SERVER_LIST_PORT=27015
+      - RCON_PORT=27020
+
+      # === Sub instances settings ===
+      - SUB_INSTANCE_KEYS=Fjordur,Caballus_P
+
+      # SUB_<KEY>_* default variables
+      #- SUB_Fjordur_SAVE_DIR=sub.Fjordur
+      #- SUB_Fjordur_SERVER_MAP=Fjordur
+      #- SUB_Fjordur_SERVER_MAP_MOD_ID=""
+      #- SUB_Fjordur_SESSION_NAME=${SESSION_NAME}2
+      #- SUB_Fjordur_GAME_MOD_IDS=${GAME_MOD_IDS}
+      #- SUB_Fjordur_GAME_CLIENT_PORT=7779
+      #- SUB_Fjordur_SERVER_LIST_PORT=27016
+      #- SUB_Fjordur_RCON_PORT=27021
+
+      # SUB_<KEY>_* default variables
+      #- SUB_Caballus_P_SAVE_DIR=sub.Caballus_P
+      #- SUB_Caballus_P_SERVER_MAP=Caballus_P
+      - SUB_Caballus_P_SERVER_MAP_MOD_ID=1679826889
+      #- SUB_Caballus_P_SESSION_NAME=${SESSION_NAME}3
+      #- SUB_Caballus_P_GAME_MOD_IDS=${GAME_MOD_IDS}
+      #- SUB_Caballus_P_GAME_CLIENT_PORT=7781
+      #- SUB_Caballus_P_SERVER_LIST_PORT=27017
+      #- SUB_Caballus_P_RCON_PORT=27022
     ports:
       # Port for connections from ARK game client
-      - "7777:7777/udp"
-      # Raw UDP socket port (always Game client port +1
-      - "7778:7778/udp"
-      # RCON management port
-      - "27020:27020/tcp"
+      - "7777-7800:7777-7800/udp"
       # Steam's server-list port
-      - "27015:27015/udp"
+      - "27015-27026:27015-27026/udp"
+      # RCON management port
+      - "27020-27031:27020-27031/tcp"
     networks:
       - default

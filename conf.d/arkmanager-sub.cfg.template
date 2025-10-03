@@ -1,0 +1,30 @@
+# Template configuration for /app/arkmanager/instances/sub.*.cfg
+# config environment
+arkserverroot="${ARK_SERVER_VOLUME}/server"                         # path of your ARK server files (default ~/ARK)
+
+# ARK server options - use ark_<optionname>=<value>
+# comment out these values if you want to define them
+# inside your GameUserSettings.ini file
+serverMap="${SUB_<KEY>_SERVER_MAP:-<KEY>}"
+serverMapModId="${SUB_<KEY>_SERVER_MAP_MOD_ID}"
+#ark_TotalConversionMod="496735411"                                 # Uncomment this to specify a total-conversion mod
+ark_RCONEnabled="True"                                              # Enable RCON Protocol
+ark_RCONPort=${SUB_<KEY>_RCON_PORT:-<RCON_PORT>}
+ark_SessionName="${SUB_<KEY>_SESSION_NAME:-${SESSION_NAME}<NUMBER_SUFFIX>}"
+ark_Port=${SUB_<KEY>_GAME_CLIENT_PORT:-<GAME_CLIENT_PORT>}
+ark_QueryPort=${SUB_<KEY>_SERVER_LIST_PORT:-<SERVER_LIST_PORT>}
+ark_ServerPassword="${SUB_<KEY>_SERVER_PASSWORD:-${SERVER_PASSWORD}}"
+ark_ServerAdminPassword="${SUB_<KEY>_ADMIN_PASSWORD:-${ADMIN_PASSWORD}}"
+ark_MaxPlayers=${SUB_<KEY>_MAX_PLAYERS:-${MAX_PLAYERS}}
+ark_GameModIds="${SUB_<KEY>_GAME_MOD_IDS:-${GAME_MOD_IDS}}"
+ark_AltSaveDirectoryName="${SUB_<KEY>_SAVE_DIR:-sub.<KEY>}"
+
+# ARK server flags - use arkflag_<optionname>=true
+#arkflag_OnlyAdminRejoinAsSpectator=true                            # Uncomment to only allow admins to rejoin as spectator
+#arkflag_DisableDeathSpectator=true                                 # Uncomment to disable players from becoming spectators when they die
+
+# ARK server options - i.e. for -optname=val, use arkopt_optname=val
+#arkopt_StructureDestructionTag=DestroySwampSnowStructures
+
+#arkCustomDynamicConfigURL="http://arkdedicated.com/dynamicconfig.ini"  # Set this to use a custom dynamic config from the given server address
+#arkPreStart="/etc/arkmanager/instances/instance.start"              # Set this to override the start script; defaults to config file name with .cfg replaced by .start

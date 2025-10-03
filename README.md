@@ -45,6 +45,7 @@ The basic configuration of your server is done by using environment variables wh
 | SERVER_LIST_PORT | 27015 | Exposed server-list port |
 | GAME_MOD_IDS | `empty` |  Additional game-mods you want to install, seperated by comma. (e.g. GAME_MOD_IDS=487516323,487516324,487516325) |
 | BETA | `empty` | Specify the beta version if necessary. (e.g. BETA=preaquatica) |
+| CLUSTER_ID | MyCluster | All maps in a container use the same cluster ID, and it is not recommended to change it later. |
 
 #### Get things runnning
 
@@ -114,7 +115,7 @@ You can easily apply your changes directly into these files.
 Alternatively, it is possible to run any available command with ARK-Server-Tools and apply your changes that way:
 
 ```bash
-$ docker exec -u steam ark_server arkmanager status
+$ docker exec -u steam ark_server arkmanager status @all
 $ docker exec -u steam ark_server arkmanager update --force
 $ docker exec -u steam ark_server arkmanager installmods
 ```
@@ -134,7 +135,7 @@ Add your desired cronjobs with valid syntax:
 
 ```bash
 0 0 * * * arkmanager update --warn --update-mods >> ${SERVER_VOLUME}/log/crontab.log 2>&1
-0 0 * * * arkmanager backup >> ${SERVER_VOLUME}/log/crontab.log 2>&1
+0 0 * * * arkmanager backup @all --cluster >> ${SERVER_VOLUME}/log/crontab.log 2>&1
 ````
 
 Close file (`:wq`) and restart the container:
@@ -183,6 +184,195 @@ Then, `arkmanager` will install / update `ark` using your provided login.
 ⚠️ Upgrade-Information ⚠️    
 If you upgrade from an image-version prior to the timestamp `1656497302` you'll have to edit `line 15` in `arkmanager.cfg`.  
 Replace with: `steamlogin="${STEAM_LOGIN}"`
+
+## Cluster settings
+
+### Examples
+
+<details>
+<summary>3 maps / 1 container</summary>
+
+  - .env
+    ```bash
+    SERVER_PASSWORD="YouShallNotPass"
+    ADMIN_PASSWORD="topsecret"
+    ```
+
+  - compose.yml
+    ```yaml
+    services:
+      server:
+        container_name: ark_server
+        image: hermsi/ark-server:latest
+        volumes:
+          - ./app:/app
+          - ./cluster:/cluster
+        environment:
+          # === Global settings ===
+          #- UPDATE_ON_START=false
+          #- PRE_UPDATE_BACKUP=true
+          #- BETA=public
+          #- CLUSTER_ID=MyCluster
+
+          # === Main instance settings ===
+          - SESSION_NAME="Clusterized ARK Server"
+          - SERVER_MAP=TheIsland
+          - SERVER_PASSWORD=${SERVER_PASSWORD}
+          - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+          - MAX_PLAYERS=20
+          - GAME_MOD_IDS=""
+          # Main instance ports as the offset, followed by the sub instance ports
+          - GAME_CLIENT_PORT=7777  # sub instances will use +2 increments
+          - SERVER_LIST_PORT=27015
+          - RCON_PORT=27020
+
+          # === Sub instances settings ===
+          - SUB_INSTANCE_KEYS=Fjordur,Caballus_P
+
+          # SUB_<KEY>_* default variables
+          #- SUB_Fjordur_SAVE_DIR=sub.Fjordur
+          #- SUB_Fjordur_SERVER_MAP=Fjordur
+          #- SUB_Fjordur_SERVER_MAP_MOD_ID=""
+          #- SUB_Fjordur_SESSION_NAME=${SESSION_NAME}2
+          #- SUB_Fjordur_GAME_MOD_IDS=${GAME_MOD_IDS}
+          #- SUB_Fjordur_GAME_CLIENT_PORT=7779
+          #- SUB_Fjordur_SERVER_LIST_PORT=27016
+          #- SUB_Fjordur_RCON_PORT=27021
+
+          # SUB_<KEY>_* default variables
+          #- SUB_Caballus_P_SAVE_DIR=sub.Caballus_P
+          #- SUB_Caballus_P_SERVER_MAP=Caballus_P
+          - SUB_Caballus_P_SERVER_MAP_MOD_ID=1679826889
+          #- SUB_Caballus_P_SESSION_NAME=${SESSION_NAME}3
+          #- SUB_Caballus_P_GAME_MOD_IDS=${GAME_MOD_IDS}
+          #- SUB_Caballus_P_GAME_CLIENT_PORT=7781
+          #- SUB_Caballus_P_SERVER_LIST_PORT=27017
+          #- SUB_Caballus_P_RCON_PORT=27022
+        ports:
+          # Port for connections from ARK game client
+          - "7777-7782:7777-7782/udp"
+          # Steam's server-list port
+          - "27015-27017:27015-27017/udp"
+          # RCON management port
+          - "27020-27022:27020-27022/tcp"
+    ```
+</details>
+<details>
+<summary>3 maps / 3 container</summary>
+
+  - share/compose.yml
+    ```yaml
+    services:
+      server:
+        container_name: ${CONTAINER_NAME}
+        image: hermsi/ark-server:latest
+        volumes:
+          - ./app:/app
+          - ../share/cluster:/cluster
+        environment:
+          - SESSION_NAME="${SESSION_NAME}"
+          - SERVER_MAP=${SERVER_MAP}
+          - SERVER_MAP_MOD_ID=${SERVER_MAP_MOD_ID}
+          - SERVER_PASSWORD=${SERVER_PASSWORD}
+          - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+          - MAX_PLAYERS=${MAX_PLAYERS}
+          - UPDATE_ON_START=${UPDATE_ON_START}
+          - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
+          - GAME_CLIENT_PORT=${GAME_CLIENT_PORT}
+          - SERVER_LIST_PORT=${SERVER_LIST_PORT}
+          - GAME_MOD_IDS=${GAME_MOD_IDS}
+          - BETA=${BETA}
+          - CLUSTER_ID=${CLUSTER_ID}
+        ports:
+          - "${GAME_CLIENT_PORT}:${GAME_CLIENT_PORTS}/udp"
+          - "${UDP_SOCKET_PORT}:${UDP_SOCKET_PORT}/udp"
+          - "${SERVER_LIST_PORT}:${SERVER_LIST_PORT}/udp"
+          - "${RCON_PORT}:27020/tcp"
+    ```
+  - owner-A-server1/compose.yml (symbolic link from `../share/compose.yml`)
+  - owner-A-server1/.env
+    ```bash
+    CONTAINER_NAME="A1"
+    SESSION_NAME="A_SESSION1"
+    SERVER_MAP="TheIsland"
+    SERVER_MAP_MOD_ID=""
+    SERVER_PASSWORD="YouShallNotPassA"
+    ADMIN_PASSWORD="topsecretA"
+    MAX_PLAYERS=20
+    UPDATE_ON_START=true
+    PRE_UPDATE_BACKUP=true
+    GAME_CLIENT_PORT=7777
+    UDP_SOCKET_PORT=7778
+    SERVER_LIST_PORT=27015
+    RCON_PORT=27020
+    GAME_MOD_IDS=""
+    BETA="public"
+    CLUSTER_ID="A"
+    ```
+  - owner-A-server2/compose.yml (symbolic link from `../share/compose.yml`)
+  - owner-A-server2/.env
+    ```bash
+    CONTAINER_NAME="A2"
+    SESSION_NAME="A_SESSION2"
+    SERVER_MAP="Aquatica"
+    SERVER_MAP_MOD_ID=""
+    SERVER_PASSWORD="YouShallNotPassA"
+    ADMIN_PASSWORD="topsecretA"
+    MAX_PLAYERS=20
+    UPDATE_ON_START=true
+    PRE_UPDATE_BACKUP=true
+    GAME_CLIENT_PORT=7779
+    UDP_SOCKET_PORT=7780
+    SERVER_LIST_PORT=27016
+    RCON_PORT=27021
+    GAME_MOD_IDS=""
+    BETA="public"
+    CLUSTER_ID="A"
+    ```
+  - owner-B-server1/compose.yml (symbolic link from `../share/compose.yml`)
+  - owner-B-server1/.env
+    ```bash
+    CONTAINER_NAME="B"
+    SESSION_NAME="B_SESSION"
+    SERVER_MAP="Caballus_P"
+    SERVER_MAP_MOD_ID="1679826889"
+    SERVER_PASSWORD="YouShallNotPassB"
+    ADMIN_PASSWORD="topsecretB"
+    MAX_PLAYERS=20
+    UPDATE_ON_START=true
+    PRE_UPDATE_BACKUP=true
+    GAME_CLIENT_PORT=7781
+    UDP_SOCKET_PORT=7782
+    SERVER_LIST_PORT=27017
+    RCON_PORT=27022
+    GAME_MOD_IDS=""
+    BETA="preaquatica"
+    CLUSTER_ID="B"
+    ```
+    <details>
+    <summary>TIPS: Add sub maps if owner B wants.</summary>
+
+      - owner-B-server1/compose.override.yml
+      ```yaml
+      services:
+        server:
+          environment:
+            - SUB_INSTANCE_KEYS=TheIsland
+            #- SUB_TheIsland_SAVE_DIR=sub.TheIsland
+            #- SUB_TheIsland_SERVER_MAP=TheIsland
+            #- SUB_TheIsland_SERVER_MAP_MOD_ID=""
+            #- SUB_TheIsland_SESSION_NAME=${SESSION_NAME}2
+            #- SUB_TheIsland_GAME_MOD_IDS=${GAME_MOD_IDS}
+            #- SUB_TheIsland_GAME_CLIENT_PORT=7783
+            #- SUB_TheIsland_SERVER_LIST_PORT=27018
+            #- SUB_TheIsland_RCON_PORT=27023
+          ports:
+            - "7783-7784:7783-7784/udp"
+            - "27018:27018/udp"
+            - "27023:27020/tcp"
+      ```
+    </details>
+</details>
 
 ## Sponsors
 
