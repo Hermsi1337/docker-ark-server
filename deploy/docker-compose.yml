@@ -27,9 +27,9 @@ services:
       - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
       - WARN_ON_STOP=${WARN_ON_STOP}
       - GAME_MOD_IDS=${GAME_MOD_IDS}
-      # # This setup names the savedir after map. Useful if you run multiple maps via the same container (default: SavedArks)
+      # # This setup changes the save directory. The value is transferred to `ark_AltSaveDirectoryName`. If not set, it falls back to SavedArks
       # # See https://github.com/arkmanager/ark-server-tools/blob/f9293089419b83f90bb8f26ad87470129645722e/README.asciidoc?plain=1#L886-L889
-      #- ALTSAVEDIRNAME=${SERVER_MAP}
+      - ALTSAVEDIRNAME=${ALTSAVEDIRNAME}
     ports:
       # Port for connections from ARK game client
       - "7777:7777/udp"
