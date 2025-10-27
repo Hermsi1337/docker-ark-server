@@ -30,7 +30,7 @@ jobs:
         id: ark_tools
         run: |
           ARK_TOOLS_VERSION=$(curl -s https://api.github.com/repos/arkmanager/ark-server-tools/commits | jq '.[0].sha' | cut -d '"' -f 2)
-        # ARK_TOOLS_VERSION=$(curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/tags" | jq -r '.[0].name' | egrep -o "[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?")
+          # ARK_TOOLS_VERSION=$(curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/tags" | jq -r '.[0].name' | egrep -o "[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?")
           echo "ARK_TOOLS_VERSION=$ARK_TOOLS_VERSION" >> $GITHUB_ENV
 
       - name: Bash Syntax Check
