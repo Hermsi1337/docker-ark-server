@@ -80,7 +80,6 @@ services:
       - BACKUP_ON_STOP=${BACKUP_ON_STOP}
       - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
       - WARN_ON_STOP=${WARN_ON_STOP}
-      - ALTSAVEDIRNAME=${ALTSAVEDIRNAME}
     ports:
       # Port for connections from ARK game client
       - "7777:7777/udp"
@@ -98,7 +97,6 @@ After applying your changes to the `docker-compose.yml` above, light it up:
 ```bash
 $ docker-compose up -d
 ```
-If you get a warning about the "ALTSAVEDIRNAME" not being set, you can ignore it or set the environment variable.
 
 ### Tweak configuration
 
