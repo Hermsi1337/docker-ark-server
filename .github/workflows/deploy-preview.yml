@@ -41,6 +41,7 @@ jobs:
         run: echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
 
       - name: Write Docker config.json
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           mkdir -p $HOME/.docker
           echo '${{ secrets.DOCKER_CONFIG_JSON }}' > $HOME/.docker/config.json
@@ -58,6 +59,7 @@ jobs:
             "${{ github.workspace }}"
 
       - name: Push Docker Images
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           PR_TAG="pr-${{ github.event.pull_request.number }}"
           docker push "${{ matrix.IMAGE_NAME }}:$PR_TAG"
