@@ -2,7 +2,7 @@ FROM        cm2network/steamcmd:root
 
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
-ARG         ARK_TOOLS_VERSION="5aec353e2e4b2fc17a6b6e3964d606d809c0f233"
+ARG         ARK_TOOLS_VERSION="f9293089419b83f90bb8f26ad87470129645722e"
 ARG         IMAGE_VERSION="dev"
 
 ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
@@ -16,6 +16,7 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             BACKUP_ON_STOP="false" \
             PRE_UPDATE_BACKUP="true" \
             WARN_ON_STOP="true" \
+            CLUSTER_ID="MyCluster" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
             ARK_SERVER_VOLUME="/app" \
             BETA="" \
@@ -58,7 +59,7 @@ COPY        conf.d  ${TEMPLATE_DIRECTORY}
 
 EXPOSE      ${GAME_CLIENT_PORT}/udp ${UDP_SOCKET_PORT}/udp ${SERVER_LIST_PORT}/udp ${RCON_PORT}/tcp
 
-VOLUME      ["${ARK_SERVER_VOLUME}"]
+VOLUME      ["${ARK_SERVER_VOLUME}", "/cluster"]
 WORKDIR     ${ARK_SERVER_VOLUME}
 
 ENTRYPOINT  ["/docker-entrypoint.sh"]
