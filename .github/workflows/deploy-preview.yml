@@ -29,7 +29,7 @@ jobs:
       - name: Get ARK Tools Version
         id: ark_tools
         run: |
-          ARK_TOOLS_VERSION=$(curl -s https://api.github.com/repos/arkmanager/ark-server-tools/commits | jq '.[0].sha' | cut -d '"' -f 2)
+          ARK_TOOLS_VERSION=$(curl -fsSL 'https://api.github.com/repos/arkmanager/ark-server-tools/commits' | jq -r '.[0].sha')
           # ARK_TOOLS_VERSION=$(curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/tags" | jq -r '.[0].name' | egrep -o "[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?")
           echo "ARK_TOOLS_VERSION=$ARK_TOOLS_VERSION" >> $GITHUB_ENV
 
@@ -41,6 +41,7 @@ jobs:
         run: echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
 
       - name: Write Docker config.json
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           mkdir -p $HOME/.docker
           echo '${{ secrets.DOCKER_CONFIG_JSON }}' > $HOME/.docker/config.json
@@ -58,6 +59,7 @@ jobs:
             "${{ github.workspace }}"
 
       - name: Push Docker Images
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           PR_TAG="pr-${{ github.event.pull_request.number }}"
           docker push "${{ matrix.IMAGE_NAME }}:$PR_TAG"
