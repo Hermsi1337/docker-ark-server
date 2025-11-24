@@ -219,7 +219,17 @@ function terminate() {
     echo "Warning: Failed to issue saveworld command."
   fi
   # Both arkmanager stop @all and kill may time out.
-  kill -TERM "${pids[@]}" 2>/dev/null || true
+  local pidfile
+  local -i count=0
+  for pidfile in ./server/ShooterGame/Saved/.arkmanager*.pid; do
+    if [ -f "${pidfile}" ]; then
+      local pid="$(cat "${pidfile}")"
+      echo "Stopping arkmanager instance $(basename ${pidfile}) (${pid}) ..."
+      kill -TERM "${pid}" 2>/dev/null && ((count++)) || true
+    fi
+  done
+  echo "Sent stop signals to ${count} instance(s)."
+  [ "${count}" -eq 0 ] && kill -TERM "${pids[@]}" 2>/dev/null || true
   echo "Waiting for all instances (${pids[*]}) to stop ..."
   wait "${pids[@]}"
   echo "done."
