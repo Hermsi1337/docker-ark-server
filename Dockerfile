@@ -41,7 +41,6 @@ RUN         set -x && \
                                 bzip2 \
                                 gosu \
                                 cron \
-                                pcregrep \
                                 procps \
             && \
             opt=$([ "${ARK_TOOLS_VERSION#v}" != "${ARK_TOOLS_VERSION}" ] && echo -n "--tag" || echo -n "--commit") && \
