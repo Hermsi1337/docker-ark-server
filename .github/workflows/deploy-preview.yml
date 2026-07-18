@@ -1,65 +1,102 @@
-name: Build and Deploy Docker
+name: Build PR Preview
 
 on:
   pull_request:
     branches:
       - master
 
+# One preview build per pull request; superseded by newer pushes to the PR.
+concurrency:
+  group: pr-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write  # required to push to ghcr.io for same-repo PRs
+
 env:
-  IMAGE_NAME: hermsi/ark-server
+  DOCKERHUB_IMAGE: hermsi/ark-server
+  QUAY_IMAGE: quay.io/hermsi1337/ark-server
+  GHCR_IMAGE: ghcr.io/hermsi1337/ark-server
 
 jobs:
-  publish_preview:
-    if: github.ref != 'refs/heads/master'
+  preview:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        IMAGE_NAME: ["hermsi/ark-server", "quay.io/hermsi1337/ark-server" ]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
 
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y curl jq grep
-
-      - name: Get ARK Tools Version
+      - name: Determine ARK server tools version
         id: ark_tools
         run: |
-          ARK_TOOLS_VERSION=$(curl -fsSL 'https://api.github.com/repos/arkmanager/ark-server-tools/commits' | jq -r '.[0].sha')
-          # ARK_TOOLS_VERSION=$(curl -s "https://api.github.com/repos/arkmanager/ark-server-tools/tags" | jq -r '.[0].name' | egrep -o "[0-9]+\.[0-9]+\.[0-9]+([a-z]+)?")
-          echo "ARK_TOOLS_VERSION=$ARK_TOOLS_VERSION" >> $GITHUB_ENV
+          ARK_TOOLS_VERSION="$(curl -fsSL 'https://api.github.com/repos/arkmanager/ark-server-tools/commits' | jq -r '.[0].sha')"
+          echo "version=${ARK_TOOLS_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Bash Syntax Check
+      - name: Check shell script syntax
+        run: find . -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+
+      # Fork pull requests do not receive repository secrets, so they can only
+      # build for validation. Same-repo PRs push previews, but only once the
+      # registry credentials have actually been configured, so the build stays
+      # green while the DOCKERHUB_/QUAY_ secrets are still missing.
+      - name: Determine push eligibility
+        id: push
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          find . -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Set timestamp
-        run: echo "TIMESTAMP=$(date +%s)" >> $GITHUB_ENV
+      - name: Log in to Docker Hub
+        if: steps.push.outputs.enabled == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Write Docker config.json
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          mkdir -p $HOME/.docker
-          echo '${{ secrets.DOCKER_CONFIG_JSON }}' > $HOME/.docker/config.json
-          chmod 0600 $HOME/.docker/config.json
+      - name: Log in to Quay.io
+        if: steps.push.outputs.enabled == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_TOKEN }}
 
-      - name: Build Docker Image
-        run: |
-          PR_TAG="pr-${{ github.event.pull_request.number }}"
-          docker build \
-            --no-cache \
-            --pull \
-            --build-arg ARK_TOOLS_VERSION="${{ env.ARK_TOOLS_VERSION }}" \
-            --tag "${{ matrix.IMAGE_NAME }}:$PR_TAG" \
-            --file "${{ github.workspace }}/Dockerfile" \
-            "${{ github.workspace }}"
+      - name: Log in to GitHub Container Registry
+        if: steps.push.outputs.enabled == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push Docker Images
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          PR_TAG="pr-${{ github.event.pull_request.number }}"
-          docker push "${{ matrix.IMAGE_NAME }}:$PR_TAG"
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            ${{ env.DOCKERHUB_IMAGE }}
+            ${{ env.QUAY_IMAGE }}
+            ${{ env.GHCR_IMAGE }}
+          tags: |
+            type=raw,value=pr-${{ github.event.pull_request.number }}
+
+      - name: Build and push PR preview
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: ${{ steps.push.outputs.enabled == 'true' }}
+          pull: true
+          no-cache: true
+          build-args: |
+            ARK_TOOLS_VERSION=${{ steps.ark_tools.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
