@@ -3,184 +3,255 @@
 [![Docker Repository on Quay](https://img.shields.io/badge/Quay.io-Repository-blue)](https://quay.io/repository/hermsi1337/ark-server)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=T85UYT37P3YNJ&source=url)
 
-# Dockerize ARK managed with [ARK-Server-Tools](https://github.com/arkmanager/ark-server-tools)
+# ARK: Survival Evolved server, dockerized
 
-You can use this image in order to start an ARK-Server for either public or private sessions.   
-The Server itself is managable by ARK-Server-Tools.
+Run a dedicated **ARK: Survival Evolved** server in Docker.
+The game server is installed and updated through `steamcmd` and managed with
+[arkmanager (ark-server-tools)](https://github.com/arkmanager/ark-server-tools),
+so day-to-day tasks like updates, backups and mod installs are one command away.
 
-## Tags
+> **Scope:** This image runs ARK: Survival **Evolved** (ASE).
+> ARK: Survival **Ascended** (ASA) is a different game with a different,
+> Windows-based server and is not covered by this image.
 
-This image always installs the latest version of ARK-Server currently avaialable.   
-Thus, the tags are reffering to the ARK-Server-Tools version which is used by the corresponding image.
+## Registries and tags
 
-## Usage
+The same image is published to three registries:
 
-### ⚠️ Windows / WSL Notice ⚠️
-
-**Mount the container volumes directly inside WSL's filesystem.** Mounting them inside a filesystem managed by Windows causes the installation to be painfully slow or even get stuck.
-
-### Startup your ARK-Server
-
-#### Basic configuration
-
-The basic configuration of your server is done by using environment variables when starting the container:
-
-| Variable | Default value | Explanation |
-|:-----------------:|:----------------------------------------------:|:------------------------------------------------------------------------------------------------------------------------------------:|
-| SESSION_NAME | Dockerized ARK Server by github.com/hermsi1337 | The name of your ARK-session which is visible in game when searching for servers |
-| SERVER_MAP | TheIsland | Desired map you want to play |
-| SERVER_PASSWORD | YouShallNotPass | Server password which is required to join your session. (overwrite with empty string if you want to disable password authentication) |
-| ADMIN_PASSWORD | Th155houldD3f1n3tlyB3Chang3d | Admin-password in order to access the admin console of ARK |
-| MAX_PLAYERS | 20 | Maximum number of players to join your session |
-| UPDATE_ON_START | false | Whether you want to update the ARK-server upon startup or not |
-| BACKUP_ON_STOP | false | Create a backup before gracefully stopping the ARK-server |
-| PRE_UPDATE_BACKUP | true | Create a backup before updating ARK-server |
-| WARN_ON_STOP | true | Broadcast a warning upon graceful shutdown |
-| ENABLE_CROSSPLAY | false | Enable crossplay. When enabled battleye should be disabled as it likes to disconnect epic players |
-| DISABLE_BATTLEYE | false | Disable Battleye protection |
-| ARK_SERVER_VOLUME | /app | Path where the server-files are stored |
-| GAME_CLIENT_PORT | 7777 | Exposed game-client port |
-| UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always Game client port +1) |
-| RCON_PORT | 27020 | Exposed RCON port |
-| SERVER_LIST_PORT | 27015 | Exposed server-list port |
-| GAME_MOD_IDS | `empty` |  Additional game-mods you want to install, seperated by comma. (e.g. GAME_MOD_IDS=487516323,487516324,487516325) |
-| BETA | `empty` | Specify the beta version if necessary. (e.g. BETA=preaquatica) |
-
-#### Get things runnning
-
-##### `docker-run`
-
-I personally prefer `docker-compose` but for those of you, who want to run their own ARK-server without any "zip and zap", here you go:
 ```bash
-# You may want to change SESSION_NAME, ADMIN_PASSWORD or host-volume
-$ docker run -d --name="ark_server" --restart=always -v "${HOME}/ark-server:/app" -e SESSION_NAME="Awesome ARK is awesome" -e ADMIN_PASSWORD="FooB4r" hermsi/ark-server:latest
+docker pull hermsi/ark-server:latest                    # Docker Hub
+docker pull quay.io/hermsi1337/ark-server:latest        # Quay.io
+docker pull ghcr.io/hermsi1337/ark-server:latest        # GitHub Container Registry
 ```
 
-##### `docker-compose`
+| Tag | Meaning |
+|---|---|
+| `latest` | Most recent build from `master` |
+| `latest-<unix-timestamp>` | Immutable snapshot of a specific `latest` build |
+| `tools-<sha>` | Build pinned to the ark-server-tools commit it was built with |
 
-In order to startup your own ARK-server with `docker-compose` - which I personally preffer over a simple `docker run` - you may adapt the following `docker-compose.yml`:
+Images are rebuilt from scratch **every Monday at 02:00 UTC** (and on every push
+to `master`), always against a freshly pulled base image. The ARK server files
+themselves live in your mounted volume and are installed and kept up to date at
+runtime via `steamcmd`/`arkmanager` — the image tag mainly determines the
+tooling around them.
+
+The `Dockerfile` pins arkmanager to release `v1.6.69` by default for
+reproducible local builds; published images are built against the current
+ark-server-tools `master` commit, which is what the `tools-<sha>` tag refers to.
+
+## Quick start
+
+### ⚠️ Windows / WSL notice ⚠️
+
+**Mount the container volumes directly inside WSL's filesystem.** Mounting them
+inside a filesystem managed by Windows causes the installation to be painfully
+slow or even get stuck.
+
+### `docker run`
+
+```bash
+# You may want to change SESSION_NAME, ADMIN_PASSWORD or the host volume
+docker run -d \
+  --name ark-server \
+  --restart unless-stopped \
+  -v "${HOME}/ark-server:/app" \
+  -e SESSION_NAME="Awesome ARK is awesome" \
+  -e SERVER_PASSWORD="YouShallNotPass" \
+  -e ADMIN_PASSWORD="FooB4r" \
+  -p 7777:7777/udp \
+  -p 7778:7778/udp \
+  -p 27015:27015/udp \
+  -p 27020:27020/tcp \
+  hermsi/ark-server:latest
+```
+
+### `docker compose`
+
 ```yml
 services:
   server:
-    restart: always
-    container_name: ark_server
     image: hermsi/ark-server:latest
+    container_name: ark-server
+    restart: unless-stopped
     volumes:
       - ${HOME}/ark-server:/app
-      - ${HOME}/ark-server-backups:/home/steam/ARK-Backups
     environment:
-      - SESSION_NAME=${SESSION_NAME}
-      - SERVER_MAP=${SERVER_MAP}
-      - SERVER_PASSWORD=${SERVER_PASSWORD}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - MAX_PLAYERS=${MAX_PLAYERS}
-      - UPDATE_ON_START=${UPDATE_ON_START}
-      - BACKUP_ON_STOP=${BACKUP_ON_STOP}
-      - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
-      - WARN_ON_STOP=${WARN_ON_STOP}
+      - SESSION_NAME=Awesome ARK is awesome
+      - SERVER_MAP=TheIsland
+      - SERVER_PASSWORD=YouShallNotPass
+      - ADMIN_PASSWORD=FooB4r
+      - MAX_PLAYERS=20
+      - UPDATE_ON_START=false
+      - PRE_UPDATE_BACKUP=true
     ports:
-      # Port for connections from ARK game client
+      # Port for connections from the ARK game client
       - "7777:7777/udp"
-      # Raw UDP socket port (always Game client port +1)
+      # Raw UDP socket port (always game client port +1)
       - "7778:7778/udp"
-      # RCON management port
-      - "27020:27020/tcp"
       # Steam's server-list port
       - "27015:27015/udp"
-    networks:
-      - default
+      # RCON management port
+      - "27020:27020/tcp"
 ```
 
-After applying your changes to the `docker-compose.yml` above, light it up:
 ```bash
-$ docker-compose up -d
+docker compose up -d
 ```
 
-### Tweak configuration
+A ready-made compose setup with an `.env` file lives in the
+[`deploy/`](deploy/) directory of this repository.
 
-After your container is up and ARK is installed you can start tweaking your configuration.   
-Basically, you can modify every setting which ARK-Server-Tools are capable of.   
-For reference of the available commands check [their docs](https://github.com/arkmanager/ark-server-tools#configuration).   
+**Note:** on first start the container installs the complete ARK dedicated
+server into your volume via `steamcmd` — that is a very large download. Follow
+the progress with `docker logs -f ark-server`.
 
-The main config files are located at the following path in the container:
+## Configuration
 
-* `/app/server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini`   
+Basic configuration is done with environment variables:
+
+| Variable | Default value | Explanation |
+|:-----------------:|:----------------------------------------------:|:------------------------------------------------------------------------------------------------------------------------------------:|
+| SESSION_NAME | Dockerized ARK Server by github.com/hermsi1337 | The name of your ARK session, visible in the in-game server browser |
+| SERVER_MAP | TheIsland | Desired map you want to play |
+| SERVER_PASSWORD | YouShallNotPass | Server password required to join your session (overwrite with an empty string to disable password authentication) |
+| ADMIN_PASSWORD | Th155houldD3f1n3tlyB3Chang3d | Admin password for the in-game admin console and RCON |
+| MAX_PLAYERS | 20 | Maximum number of players in your session |
+| GAME_MOD_IDS | `empty` | Additional game mods to install, separated by comma (e.g. `GAME_MOD_IDS=487516323,487516324,487516325`) |
+| UPDATE_ON_START | false | Update the ARK server and mods (with a backup, if configured) before each start |
+| PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
+| BACKUP_ON_STOP * | false | Create a backup before gracefully stopping the ARK server |
+| WARN_ON_STOP * | true | Broadcast a warning upon graceful shutdown |
+| ENABLE_CROSSPLAY | false | Enable crossplay (starts the server with `-crossplay`). When enabled, BattlEye should be disabled as it likes to disconnect Epic players |
+| DISABLE_BATTLEYE | false | Disable BattlEye protection (starts the server with `-NoBattlEye`) |
+| BETA | `empty` | Opt into a Steam beta branch if necessary (e.g. `BETA=preaquatica`) |
+| BETA_ACCESSCODE | `empty` | Access code for the chosen beta branch, if it requires one |
+| STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)) |
+| ARK_SERVER_VOLUME | /app | Path inside the container where the server files are stored |
+| GAME_CLIENT_PORT | 7777 | Exposed game client port |
+| UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always game client port +1) |
+| RCON_PORT | 27020 | Exposed RCON port |
+| SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
+| DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
+
+\* `BACKUP_ON_STOP` and `WARN_ON_STOP` are accepted for backwards
+compatibility but are currently not evaluated by the entrypoint or the bundled
+arkmanager configuration. Use a [cronjob](#add-cronjobs) or
+`arkmanager backup` for scheduled backups instead.
+
+### Data layout
+
+Everything the server needs lives in the volume mounted at `/app`
+(`ARK_SERVER_VOLUME`):
+
+| Path | Purpose |
+|---|---|
+| `/app/server` | The ARK dedicated server installation |
+| `/app/backup` | Backups created by `arkmanager backup` |
+| `/app/log` | arkmanager log files |
+| `/app/staging` | Staging directory for server updates |
+| `/app/crontab` | Cron definitions loaded at container start |
+| `/app/arkmanager` | Persisted arkmanager configuration (global + instance) |
+| `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files |
+
+### Tweak the configuration
+
+After your container is up and ARK is installed you can start tweaking your
+configuration. Basically, you can modify every setting ark-server-tools is
+capable of. For reference of the available settings check
+[their docs](https://github.com/arkmanager/ark-server-tools#configuration).
+
+The main game config files are located at:
+
+* `/app/server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini`
 * `/app/server/ShooterGame/Saved/Config/LinuxServer/Game.ini`
 
-You can easily apply your changes directly into these files.
+The entrypoint symlinks both of them into the volume root, so on the host you
+can simply edit `<your-volume>/Game.ini` and `<your-volume>/GameUserSettings.ini`.
 
-Alternatively, it is possible to run any available command with ARK-Server-Tools and apply your changes that way:
+The arkmanager configuration (`arkmanager.cfg` and the `main` instance config)
+persists in `<your-volume>/arkmanager/`. The bundled templates are only copied
+there when the files do not exist yet, so your changes survive image updates.
+
+Alternatively, run any ark-server-tools command directly:
 
 ```bash
-$ docker exec -u steam ark_server arkmanager status
-$ docker exec -u steam ark_server arkmanager update --force
-$ docker exec -u steam ark_server arkmanager installmods
+docker exec -u steam ark-server arkmanager status
+docker exec -u steam ark-server arkmanager update --force
+docker exec -u steam ark-server arkmanager installmods
+docker exec -u steam ark-server arkmanager backup
 ```
 
-For a full list of all available commands [check here](https://github.com/arkmanager/ark-server-tools#commands-acting-on-instances)
+For a full list of all available commands
+[check here](https://github.com/arkmanager/ark-server-tools#commands-acting-on-instances).
 
 ### Add cronjobs
 
-It is also possible to add cronjobs inside the cointainer. You could use the crontab for update- or backup-stuff.   
-In order to do so, edit the crontab-file located direct in the server-volume.
+You can add cronjobs inside the container, e.g. for scheduled updates or
+backups. Edit the crontab file located in the server volume:
 
 ```bash
-$ vim "${HOME}/ark-server/crontab"
+vim "${HOME}/ark-server/crontab"
 ```
 
-Add your desired cronjobs with valid syntax:
+Add your desired cronjobs with valid syntax (they run as the `steam` user):
 
 ```bash
-0 0 * * * arkmanager update --warn --update-mods >> ${SERVER_VOLUME}/log/crontab.log 2>&1
-0 0 * * * arkmanager backup >> ${SERVER_VOLUME}/log/crontab.log 2>&1
-````
-
-Close file (`:wq`) and restart the container:
-
-```bash
-$ docker restart ark_server
+0 4 * * * arkmanager update --warn --update-mods >> /app/log/crontab.log 2>&1
+0 0 * * * arkmanager backup >> /app/log/crontab.log 2>&1
 ```
 
-### Configure Steam login session
-  
-In order for `steamcmd` to respect your user's non-anonymous dlc's and stuff, you have to mount the steam-session inside the ark-server container.
+The crontab is loaded when the container starts, so apply your changes with:
 
-To do so, you first need to login with steamcmd in order to create a valid session:
+```bash
+docker restart ark-server
+```
+
+### Configure a Steam login session
+
+For `steamcmd` to respect your account's non-anonymous DLCs and content, mount
+a Steam session into the container.
+
+First, log in once with `steamcmd` to create a valid session:
 
 ```shell
-$ root@myVPS:/var/storage/ark-server# mkdir Steam
-$ root@myVPS:/var/storage/ark-server# chown 1000.1000 Steam
-$ root@myVPS:/var/storage/ark-server# docker run --rm --entrypoint /home/steam/steamcmd/steamcmd.sh -it -u steam -v $(pwd)/Steam:/home/steam/Steam hermsi/ark-server '+login YOUR_STEAM_USERNAME "YOUR_STEAM_PASSWORD"'
-Redirecting stderr to '/home/steam/Steam/logs/stderr.txt'
-[  0%] Checking for available updates...
-[----] Verifying installation...
-Steam Console Client (c) Valve Corporation - version 1654574676
--- type 'quit' to exit --
-Loading Steam API...OK
-Logging in user 'YOUR_STEAM_USERNAME' to Steam Public...
-Enter the current code from your Steam Guard Mobile Authenticator app
-Two-factor code:FOOBAR
-OK
-Waiting for client config...OK
-Waiting for user info...OK
-
-Steam>quit
+mkdir Steam && chown 1000:1000 Steam
+docker run --rm -it -u steam \
+  -v "$(pwd)/Steam:/home/steam/Steam" \
+  --entrypoint /home/steam/steamcmd/steamcmd.sh \
+  hermsi/ark-server '+login YOUR_STEAM_USERNAME "YOUR_STEAM_PASSWORD"'
+# ...enter your Steam Guard code when prompted, then type: quit
 ```
 
-Afterward, set the env-var `STEAM_LOGIN` to your user and mount the newly created `Steam`-directory inside your Ark-container:
+Afterwards, set the env var `STEAM_LOGIN` to your username and mount the newly
+created `Steam` directory into your ARK container:
 
 ```yaml
     environment:
       STEAM_LOGIN: "YOUR_STEAM_USERNAME"
     volumes:
-      ./Steam:/home/steam/Steam:rw
+      - ./Steam:/home/steam/Steam:rw
 ```
 
-Then, `arkmanager` will install / update `ark` using your provided login.
+`arkmanager` will then install/update ARK using your login.
 
-⚠️ Upgrade-Information ⚠️    
-If you upgrade from an image-version prior to the timestamp `1656497302` you'll have to edit `line 15` in `arkmanager.cfg`.  
-Replace with: `steamlogin="${STEAM_LOGIN}"`
+⚠️ **Upgrade note:** the arkmanager config in your volume is only created once
+and never overwritten. If your server volume was first created with an image
+older than timestamp `1656497302`, edit line 15 of
+`<your-volume>/arkmanager/arkmanager.cfg` and replace it with:
+`steamlogin="${STEAM_LOGIN}"`
+
+## Architecture
+
+This image is built for **`linux/amd64` only**. Both the underlying
+`cm2network/steamcmd` base image and the ARK: Survival Evolved dedicated server
+are x86-only software, so arm64 builds are not possible.
+
+## Contributing and maintenance
+
+Development, CI/CD and maintenance conventions for this repository are
+documented in [AGENTS.md](AGENTS.md). Pull requests against `master`
+automatically get a preview image build.
 
 ## Sponsors
 
