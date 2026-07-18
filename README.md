@@ -1,4 +1,4 @@
-![Gitlab pipeline status](https://img.shields.io/gitlab/pipeline-status/hermsi1337/docker-ark-server?branch=master&style=flat-square)
+[![Build and Publish](https://github.com/Hermsi1337/docker-ark-server/actions/workflows/build-and-deploy.yml/badge.svg)](https://github.com/Hermsi1337/docker-ark-server/actions/workflows/build-and-deploy.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/hermsi/ark-server?label=hub.docker.com%20pulls&style=flat-square)](https://hub.docker.com/r/hermsi/ark-server)
 [![Docker Repository on Quay](https://img.shields.io/badge/Quay.io-Repository-blue)](https://quay.io/repository/hermsi1337/ark-server)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=T85UYT37P3YNJ&source=url)
@@ -60,8 +60,6 @@ $ docker run -d --name="ark_server" --restart=always -v "${HOME}/ark-server:/app
 
 In order to startup your own ARK-server with `docker-compose` - which I personally preffer over a simple `docker run` - you may adapt the following `docker-compose.yml`:
 ```yml
-version: '3'
-
 services:
   server:
     restart: always
@@ -102,7 +100,7 @@ $ docker-compose up -d
 
 After your container is up and ARK is installed you can start tweaking your configuration.   
 Basically, you can modify every setting which ARK-Server-Tools are capable of.   
-For reference of the available commands check [their docs](https://github.com/FezVrasta/ark-server-tools#configuration).   
+For reference of the available commands check [their docs](https://github.com/arkmanager/ark-server-tools#configuration).   
 
 The main config files are located at the following path in the container:
 
@@ -119,7 +117,7 @@ $ docker exec -u steam ark_server arkmanager update --force
 $ docker exec -u steam ark_server arkmanager installmods
 ```
 
-For a full list of all available commands [check here](https://github.com/FezVrasta/ark-server-tools#commands-acting-on-instances)
+For a full list of all available commands [check here](https://github.com/arkmanager/ark-server-tools#commands-acting-on-instances)
 
 ### Add cronjobs
 
