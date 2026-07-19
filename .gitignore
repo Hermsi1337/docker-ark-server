@@ -1,5 +1,6 @@
 .idea/
-deploy/
+deploy/*
 !deploy/example.env
 !deploy/docker-compose.yml
+!deploy/steam-login.sh
 volumes/
