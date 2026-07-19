@@ -125,6 +125,7 @@ Basic configuration is done with environment variables:
 | WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |
 | ENABLE_CROSSPLAY | false | Enable crossplay (starts the server with `-crossplay`). When enabled, BattlEye should be disabled as it likes to disconnect Epic players |
 | DISABLE_BATTLEYE | false | Disable BattlEye protection (starts the server with `-NoBattlEye`) |
+| ARK_EXTRA_OPTS | `empty` | Additional ARK command line options, space separated (e.g. `ARK_EXTRA_OPTS=-ForceAllowCaveFlyers -PreventHibernation`) |
 | BETA | `empty` | Opt into a Steam beta branch if necessary (e.g. `BETA=preaquatica`) |
 | BETA_ACCESSCODE | `empty` | Access code for the chosen beta branch, if it requires one |
 | STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)) |
