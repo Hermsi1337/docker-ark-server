@@ -13,6 +13,7 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             MAX_PLAYERS="20" \
             GAME_MOD_IDS="" \
             UPDATE_ON_START="false" \
+            VALIDATE_ON_START="false" \
             BACKUP_ON_STOP="false" \
             PRE_UPDATE_BACKUP="true" \
             WARN_ON_STOP="true" \
