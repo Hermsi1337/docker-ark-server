@@ -167,6 +167,7 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/log` | arkmanager log files |
 | `/app/staging` | Staging directory for server updates |
 | `/app/crontab` | Cron definitions loaded at container start |
+| `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
 | `/app/arkmanager` | Persisted arkmanager configuration (global + instance) |
 | `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files |
 
@@ -215,6 +216,17 @@ Add your desired cronjobs with valid syntax (they run as the `steam` user):
 ```bash
 0 4 * * * arkmanager update --warn --update-mods >> /app/log/crontab.log 2>&1
 0 0 * * * arkmanager backup >> /app/log/crontab.log 2>&1
+```
+
+The container environment is exported to `/app/environment` on every start and
+loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
+same variables as the server process. If your crontab was created by an older
+image and jobs fail with errors like `mkdir: cannot create directory '/server'`,
+add these two lines at the top of the file:
+
+```bash
+SHELL=/bin/bash
+BASH_ENV=/app/environment
 ```
 
 The crontab is loaded when the container starts, so apply your changes with:
