@@ -72,21 +72,23 @@ function copy_missing_file() {
 
 function needs_install() {
   local SERVER_DIR="${ARK_SERVER_VOLUME}/server"
+  local SERVER_EXEC="${SERVER_DIR}/ShooterGame/Binaries/Linux/ShooterGameServer"
   if [ ! -d "${SERVER_DIR}" ]; then
     echo "${SERVER_DIR} not found ..."
     return 0
   fi
 
-  # Backwards compatibility
+  # Backwards compatibility - but only trust version.txt if the server
+  # executable actually exists, otherwise trigger a repair install
   local VERSION_FILE="${SERVER_DIR}/version.txt"
-  if [ -f "${VERSION_FILE}" ]; then
+  if [ -f "${VERSION_FILE}" ] && [ -s "${SERVER_EXEC}" ]; then
     echo "Already installed. (found ${VERSION_FILE})"
     return 1
   fi
 
   local INSTALLED_FILES=(
     "${SERVER_DIR}/steamapps/appmanifest_376030.acf"
-    "${SERVER_DIR}/ShooterGame/Binaries/Linux/ShooterGameServer"
+    "${SERVER_EXEC}"
   )
   for FILE in "${INSTALLED_FILES[@]}"; do
     if [ ! -s "${FILE}" ]; then
@@ -97,6 +99,24 @@ function needs_install() {
 
   echo "Already installed."
   return 1
+}
+
+function assert_free_disk_space() {
+  # a fresh ARK install needs roughly 25GB (plus staging/backup headroom)
+  local REQUIRED_MB="25000"
+  local AVAILABLE_MB
+
+  if [[ "${SKIP_DISK_CHECK}" == "true" ]]; then
+    return
+  fi
+
+  AVAILABLE_MB="$(df -Pm "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}')"
+  if [[ -n "${AVAILABLE_MB}" ]] && (( AVAILABLE_MB < REQUIRED_MB )); then
+    echo "ERROR: Not enough free disk space on ${ARK_SERVER_VOLUME}:"
+    echo "       ${AVAILABLE_MB}MB available, ~${REQUIRED_MB}MB required for the ARK server files."
+    echo "       Free up disk space, or set SKIP_DISK_CHECK=true to install anyway."
+    exit 1
+  fi
 }
 
 args=("$*")
@@ -148,6 +168,8 @@ copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/
 if needs_install; then
   echo "No game files found. Installing..."
 
+  assert_free_disk_space
+
   create_missing_dir \
     "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/SavedArks" \
     "${ARK_SERVER_VOLUME}/server/ShooterGame/Content/Mods" \
@@ -157,7 +179,17 @@ if needs_install; then
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
   if ! ${ARKMANAGER} install --verbose ${BETA_ARGS[@]}; then
-    echo "Installation failed"
+    echo "ERROR: Installation failed - check the steamcmd output above."
+    echo "       Common causes: not enough disk space ($(df -Ph "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}') left on ${ARK_SERVER_VOLUME}), network hiccups."
+    exit 1
+  fi
+
+  # steamcmd occasionally reports success although the download is incomplete
+  # (e.g. 'state is 0x202 after update job' on full disks) - verify it
+  if needs_install > /dev/null; then
+    echo "ERROR: Installation finished but the server files are still incomplete."
+    echo "       Check the steamcmd output above and the free disk space on ${ARK_SERVER_VOLUME}"
+    echo "       ($(df -Ph "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}') left), then restart the container to retry."
     exit 1
   fi
 fi
