@@ -144,6 +144,13 @@ fi
 if [[ "${DISABLE_BATTLEYE}" == "true" ]]; then
   args=('--arkopt,-NoBattlEye' "${args[@]}")
 fi
+# pass arbitrary additional ARK command line options, space separated,
+# e.g. ARK_EXTRA_OPTS="-ForceAllowCaveFlyers -PreventHibernation"
+EXTRA_ARGS=()
+for EXTRA_OPT in ${ARK_EXTRA_OPTS}; do
+  EXTRA_ARGS+=("--arkopt,${EXTRA_OPT}")
+done
+args=("${EXTRA_ARGS[@]}" "${args[@]}")
 BETA_ARGS=(${BETA:+--beta=${BETA}} ${BETA_ACCESSCODE:+--betapassword=${BETA_ACCESSCODE}})
 
 echo "_______________________________________"

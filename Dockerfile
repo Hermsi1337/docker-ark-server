@@ -12,6 +12,7 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             ADMIN_PASSWORD="Th155houldD3f1n3tlyB3Chang3d" \
             MAX_PLAYERS="20" \
             GAME_MOD_IDS="" \
+            ARK_EXTRA_OPTS="" \
             UPDATE_ON_START="false" \
             VALIDATE_ON_START="false" \
             BACKUP_ON_STOP="false" \
