@@ -119,6 +119,7 @@ Basic configuration is done with environment variables:
 | MAX_PLAYERS | 20 | Maximum number of players in your session |
 | GAME_MOD_IDS | `empty` | Additional game mods to install, separated by comma (e.g. `GAME_MOD_IDS=487516323,487516324,487516325`) |
 | UPDATE_ON_START | false | Update the ARK server and mods (with a backup, if configured) before each start |
+| VALIDATE_ON_START | false | Let `steamcmd` validate and repair the server files during `UPDATE_ON_START` — useful after a corrupted update, but makes the start noticeably slower |
 | PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
 | BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully |
 | WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |

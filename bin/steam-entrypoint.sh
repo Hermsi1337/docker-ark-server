@@ -16,14 +16,24 @@ trap 'exit 143' TERM INT
 
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
+    [[ "${VALIDATE_ON_START}" != "true" ]] ||
+      echo "WARNING: VALIDATE_ON_START has no effect because UPDATE_ON_START is not 'true' - skipping validation"
     return
   fi
 
   echo "\$UPDATE_ON_START is 'true'..."
 
+  local UPDATE_ARGS=(--verbose --update-mods --backup --no-autostart)
+  # let steamcmd validate and repair the installed files, e.g. after a
+  # corrupted download - slower, therefore opt-in
+  if [[ "${VALIDATE_ON_START}" == "true" ]]; then
+    echo "\$VALIDATE_ON_START is 'true'..."
+    UPDATE_ARGS+=(--validate)
+  fi
+
   # auto checks if a update is needed, if yes, then update the server or mods
   # (otherwise it just does nothing)
-  ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart ${BETA_ARGS[@]}
+  ${ARKMANAGER} update "${UPDATE_ARGS[@]}" ${BETA_ARGS[@]}
 }
 
 function stop_server() {
