@@ -217,6 +217,17 @@ Add your desired cronjobs with valid syntax (they run as the `steam` user):
 0 0 * * * arkmanager backup >> /app/log/crontab.log 2>&1
 ```
 
+The container environment is exported to `/app/environment` on every start and
+loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
+same variables as the server process. If your crontab was created by an older
+image and jobs fail with errors like `mkdir: cannot create directory '/server'`,
+add these two lines at the top of the file:
+
+```bash
+SHELL=/bin/bash
+BASH_ENV=/app/environment
+```
+
 The crontab is loaded when the container starts, so apply your changes with:
 
 ```bash

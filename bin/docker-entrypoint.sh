@@ -21,6 +21,15 @@ chown -R "${STEAM_USER}": "${ARK_TOOLS_DIR}" || echo "Failed setting rights on $
 rm -rf "/etc/arkmanager"
 ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
 
+# Copy the crontab template on first start and load it as root: the setgid
+# crontab binary fails with "mkstemp: Permission denied" on hosts that run
+# containers with no-new-privileges (e.g. some NAS systems).
+if [[ ! -f "${ARK_SERVER_VOLUME}/crontab" ]]; then
+  cp -a "${TEMPLATE_DIRECTORY}/crontab" "${ARK_SERVER_VOLUME}/crontab"
+  chown "${STEAM_USER}": "${ARK_SERVER_VOLUME}/crontab" || true
+fi
+crontab -u "${STEAM_USER}" "${ARK_SERVER_VOLUME}/crontab" || echo "Failed loading crontab, continuing startup..."
+
 service cron start
 
 exec gosu "${STEAM_USER}" /steam-entrypoint.sh $*

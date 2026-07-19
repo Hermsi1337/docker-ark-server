@@ -127,13 +127,18 @@ ARKMANAGER="$(command -v arkmanager)"
 
 cd "${ARK_SERVER_VOLUME}"
 
+# export the container environment for cron jobs: the bundled crontab loads it
+# via BASH_ENV so that arkmanager and its bash-based config files see the same
+# variables as the server process
+export -p > "${ARK_SERVER_VOLUME}/environment"
+chmod 600 "${ARK_SERVER_VOLUME}/environment"
+
 echo "Setting up folder and file structure..."
 create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging"
 
 # copy from template to server volume
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkmanager.cfg"
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
-copy_missing_file "${TEMPLATE_DIRECTORY}/crontab" "${ARK_SERVER_VOLUME}/crontab"
 
 [[ -L "${ARK_SERVER_VOLUME}/Game.ini" ]] ||
   ln -s ./server/ShooterGame/Saved/Config/LinuxServer/Game.ini Game.ini
@@ -156,8 +161,6 @@ if needs_install; then
     exit 1
   fi
 fi
-
-crontab "${ARK_SERVER_VOLUME}/crontab"
 
 if [[ -n "${GAME_MOD_IDS}" ]]; then
   echo "Installing mods: '${GAME_MOD_IDS}' ..."
