@@ -120,8 +120,8 @@ Basic configuration is done with environment variables:
 | GAME_MOD_IDS | `empty` | Additional game mods to install, separated by comma (e.g. `GAME_MOD_IDS=487516323,487516324,487516325`) |
 | UPDATE_ON_START | false | Update the ARK server and mods (with a backup, if configured) before each start |
 | PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
-| BACKUP_ON_STOP * | false | Create a backup before gracefully stopping the ARK server |
-| WARN_ON_STOP * | true | Broadcast a warning upon graceful shutdown |
+| BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully |
+| WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |
 | ENABLE_CROSSPLAY | false | Enable crossplay (starts the server with `-crossplay`). When enabled, BattlEye should be disabled as it likes to disconnect Epic players |
 | DISABLE_BATTLEYE | false | Disable BattlEye protection (starts the server with `-NoBattlEye`) |
 | BETA | `empty` | Opt into a Steam beta branch if necessary (e.g. `BETA=preaquatica`) |
@@ -134,10 +134,22 @@ Basic configuration is done with environment variables:
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
 | DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
 
-\* `BACKUP_ON_STOP` and `WARN_ON_STOP` are accepted for backwards
-compatibility but are currently not evaluated by the entrypoint or the bundled
-arkmanager configuration. Use a [cronjob](#add-cronjobs) or
-`arkmanager backup` for scheduled backups instead.
+### Graceful shutdown
+
+On `docker stop` / `docker restart` the entrypoint warns players
+(`WARN_ON_STOP`), saves the world via `arkmanager stop --saveworld` and
+optionally creates a backup (`BACKUP_ON_STOP`). Docker only waits 10 seconds
+by default before force-killing the container — far too short for an ARK
+world save. Raise the grace period, otherwise you risk losing progress:
+
+```yaml
+services:
+  server:
+    stop_grace_period: 5m
+```
+
+For plain `docker` commands use `docker stop -t 300 ark-server` (and
+`docker run --stop-timeout 300 ...`).
 
 ### Data layout
 
