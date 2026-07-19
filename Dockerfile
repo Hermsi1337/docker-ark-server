@@ -30,7 +30,9 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             SERVER_LIST_PORT="27015" \
             STEAM_HOME="/home/${USER}" \
             STEAM_USER="${USER}" \
-            STEAM_LOGIN="anonymous"
+            STEAM_LOGIN="anonymous" \
+            PUID="" \
+            PGID=""
 
 ENV         ARK_TOOLS_DIR="${ARK_SERVER_VOLUME}/arkmanager"
 

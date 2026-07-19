@@ -4,7 +4,7 @@ set -e
 
 [[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
 
-if [[ "$(whoami)" != "${STEAM_USER}" ]]; then
+if [[ "$(id -u)" != "$(id -u "${STEAM_USER}")" ]]; then
   echo "run this script as steam-user"
   exit 1
 fi

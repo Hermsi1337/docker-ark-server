@@ -130,6 +130,8 @@ Basic configuration is done with environment variables:
 | BETA_ACCESSCODE | `empty` | Access code for the chosen beta branch, if it requires one |
 | STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)) |
 | ARK_SERVER_VOLUME | /app | Path inside the container where the server files are stored |
+| PUID | `empty` | Run the server with a custom UID, e.g. to match the owner of a bind mount on NAS systems. If the server volume's ownership does not match, it is adopted once via a recursive chown, which can take a while |
+| PGID | `empty` | Run the server with a custom GID (see `PUID`) |
 | GAME_CLIENT_PORT | 7777 | Exposed game client port |
 | UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always game client port +1) |
 | RCON_PORT | 27020 | Exposed RCON port |
@@ -267,7 +269,9 @@ created `Steam` directory into your ARK container:
       - ./Steam:/home/steam/Steam:rw
 ```
 
-`arkmanager` will then install/update ARK using your login.
+`arkmanager` will then install/update ARK using your login. When using
+`PUID`/`PGID`, the ARK container adopts ownership of the mounted Steam
+session automatically on start.
 
 ⚠️ **Upgrade note:** the arkmanager config in your volume is only created once
 and never overwritten. If your server volume was first created with an image
