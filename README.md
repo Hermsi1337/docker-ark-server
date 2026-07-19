@@ -167,6 +167,7 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/log` | arkmanager log files |
 | `/app/staging` | Staging directory for server updates |
 | `/app/crontab` | Cron definitions loaded at container start |
+| `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
 | `/app/arkmanager` | Persisted arkmanager configuration (global + instance) |
 | `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files |
 

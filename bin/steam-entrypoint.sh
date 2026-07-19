@@ -127,11 +127,11 @@ ARKMANAGER="$(command -v arkmanager)"
 
 cd "${ARK_SERVER_VOLUME}"
 
-# export the container environment for cron jobs: the bundled crontab loads it
-# via BASH_ENV so that arkmanager and its bash-based config files see the same
-# variables as the server process
-export -p > "${ARK_SERVER_VOLUME}/environment"
-chmod 600 "${ARK_SERVER_VOLUME}/environment"
+# export the container environment for cron jobs (minus shell bookkeeping):
+# the bundled crontab loads it via BASH_ENV so that arkmanager and its
+# bash-based config files see the same variables as the server process
+export -p | grep -Ev '^declare -x (PWD|OLDPWD|SHLVL)($|=)' > "${ARK_SERVER_VOLUME}/environment"
+chmod 600 "${ARK_SERVER_VOLUME}/environment" || echo "Failed to restrict permissions on ${ARK_SERVER_VOLUME}/environment, continuing startup..."
 
 echo "Setting up folder and file structure..."
 create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${ARK_SERVER_VOLUME}/staging"
