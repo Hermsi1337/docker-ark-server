@@ -151,6 +151,10 @@ services:
 For plain `docker` commands use `docker stop -t 300 ark-server` (and
 `docker run --stop-timeout 300 ...`).
 
+Note: the world save itself is additionally bounded by arkmanager-internal
+timeouts (roughly 50 seconds) — the grace period has to cover the shutdown
+warning, the save, the optional backup and the process shutdown.
+
 ### Data layout
 
 Everything the server needs lives in the volume mounted at `/app`
