@@ -11,11 +11,23 @@ fi
 # Optionally remap the steam user to a custom UID/GID, e.g. to match the
 # owner of a bind mount on NAS systems (Synology, UGREEN, ...)
 if [[ -n "${PUID}${PGID}" ]]; then
+  for ID_VAR in PUID PGID; do
+    if [[ -n "${!ID_VAR}" ]] && [[ ! "${!ID_VAR}" =~ ^[0-9]+$ ]]; then
+      echo "ERROR: ${ID_VAR} must be numeric, got '${!ID_VAR}'"
+      exit 1
+    fi
+  done
+  if [[ "${PUID}" == "0" ]] || [[ "${PGID}" == "0" ]]; then
+    echo "ERROR: PUID/PGID 0 (root) is not supported"
+    exit 1
+  fi
+
   CURRENT_UID="$(id -u "${STEAM_USER}")"
   CURRENT_GID="$(id -g "${STEAM_USER}")"
   STEAM_GROUP="$(id -gn "${STEAM_USER}")"
-  TARGET_UID="${PUID:-${CURRENT_UID}}"
-  TARGET_GID="${PGID:-${CURRENT_GID}}"
+  # 10# forces base-10 so values like "01000" cannot be read as octal
+  TARGET_UID="$((10#${PUID:-${CURRENT_UID}}))"
+  TARGET_GID="$((10#${PGID:-${CURRENT_GID}}))"
 
   if [[ "${TARGET_GID}" != "${CURRENT_GID}" ]]; then
     echo "Changing GID of ${STEAM_USER} from ${CURRENT_GID} to ${TARGET_GID}..."
@@ -26,9 +38,17 @@ if [[ -n "${PUID}${PGID}" ]]; then
     usermod -o -u "${TARGET_UID}" "${STEAM_USER}"
   fi
   if [[ "${TARGET_UID}" != "${CURRENT_UID}" ]] || [[ "${TARGET_GID}" != "${CURRENT_GID}" ]]; then
-    echo "Adopting ownership of ${STEAM_HOME} and ${ARK_SERVER_VOLUME} (one-time, may take a while)..."
+    # small, container-local; also adopts a mounted /home/steam/Steam session
     chown -R "${STEAM_USER}": "${STEAM_HOME}" || echo "Failed setting rights on ${STEAM_HOME}, continuing startup..."
-    chown -R "${STEAM_USER}": "${ARK_SERVER_VOLUME}" || echo "Failed setting rights on ${ARK_SERVER_VOLUME}, continuing startup..."
+  fi
+
+  # adopt the server volume only when its ownership actually differs:
+  # containers are recreated on every image update and re-running a
+  # recursive chown over ~25GB each time would hurt exactly the NAS
+  # systems this feature is for
+  if [[ "$(stat -c '%u:%g' "${ARK_SERVER_VOLUME}")" != "${TARGET_UID}:${TARGET_GID}" ]]; then
+    echo "Adopting ownership of ${ARK_SERVER_VOLUME} (one-time, may take a while)..."
+    chown -R "${TARGET_UID}:${TARGET_GID}" "${ARK_SERVER_VOLUME}" || echo "Failed setting rights on ${ARK_SERVER_VOLUME}, continuing startup..."
   fi
 fi
 
