@@ -356,6 +356,9 @@ docker run --rm -it -v "${HOME}/ark-server:/app" --entrypoint bash hermsi/ark-se
 docker start ark-server
 ```
 
+If you run with `PUID`/`PGID`, replace `gosu steam` with `gosu <PUID>:<PGID>`
+(gosu accepts numeric ids) so the restored files get the right owner.
+
 ### Xbox crossplay?
 
 Not possible with this image. ASE's `-crossplay` flag covers **Steam and

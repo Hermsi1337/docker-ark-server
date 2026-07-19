@@ -15,9 +15,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# .env is a compose dotenv file, not valid bash (values are unquoted) -
+# extract only the keys we need, command line values take precedence
 if [[ -f ".env" ]]; then
-  # shellcheck disable=SC1091
-  source ".env"
+  STEAM_LOGIN="${STEAM_LOGIN:-$(sed -n 's/^STEAM_LOGIN=//p' .env | tail -n1)}"
+  STEAM_SESSION_VOLUME="${STEAM_SESSION_VOLUME:-$(sed -n 's/^STEAM_SESSION_VOLUME=//p' .env | tail -n1)}"
 fi
 
 STEAM_SESSION_VOLUME="${STEAM_SESSION_VOLUME:-${PWD}/Steam}"
