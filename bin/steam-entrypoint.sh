@@ -9,6 +9,11 @@ if [[ "$(whoami)" != "${STEAM_USER}" ]]; then
   exit 1
 fi
 
+# minimal stop handler for the install/update phase: bash as PID 1 would
+# otherwise ignore SIGTERM entirely; replaced by stop_server once the
+# server is about to run
+trap 'exit 143' TERM INT
+
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
     return
@@ -19,6 +24,30 @@ function may_update() {
   # auto checks if a update is needed, if yes, then update the server or mods
   # (otherwise it just does nothing)
   ${ARKMANAGER} update --verbose --update-mods --backup --no-autostart ${BETA_ARGS[@]}
+}
+
+function stop_server() {
+  echo "Caught stop signal, gracefully stopping the ARK server..."
+
+  if [[ "${WARN_ON_STOP}" == "true" ]]; then
+    ${ARKMANAGER} broadcast "Server is shutting down" || true
+  fi
+
+  ${ARKMANAGER} stop --saveworld || echo "Graceful stop failed, the server may not have saved!"
+
+  if [[ "${BACKUP_ON_STOP}" == "true" ]]; then
+    echo "\$BACKUP_ON_STOP is 'true', creating a backup..."
+    ${ARKMANAGER} backup || echo "Backup on stop failed, continuing shutdown..."
+  fi
+
+  # if the run process is still alive (e.g. the signal arrived before the
+  # server pidfile existed, so stop had nothing to do), terminate it directly
+  if [[ -n "${ARK_RUN_PID}" ]] && kill -0 "${ARK_RUN_PID}" 2>/dev/null; then
+    kill -TERM "${ARK_RUN_PID}" 2>/dev/null || true
+  fi
+
+  [[ -z "${ARK_RUN_PID}" ]] || wait "${ARK_RUN_PID}" || true
+  exit 0
 }
 
 function create_missing_dir() {
@@ -148,4 +177,13 @@ fi
 
 may_update
 
-exec "${ARKMANAGER}" run --verbose ${args[@]}
+# Run the server in the background and wait for it, so that this script stays
+# PID 1 and can react to docker stop/restart: without this, the container is
+# killed without a world save and players lose progress (#38).
+# Docker's default grace period of 10s is far too short for an ARK world save,
+# so raise it (docker stop -t / stop_grace_period) as documented in the README.
+trap stop_server TERM INT
+
+"${ARKMANAGER}" run --verbose ${args[@]} &
+ARK_RUN_PID=$!
+wait "${ARK_RUN_PID}"
