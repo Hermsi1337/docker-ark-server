@@ -248,7 +248,14 @@ docker restart ark-server
 For `steamcmd` to respect your account's non-anonymous DLCs and content, mount
 a Steam session into the container.
 
-First, log in once with `steamcmd` to create a valid session:
+The [`deploy/steam-login.sh`](deploy/steam-login.sh) helper automates the
+whole procedure (including resetting a broken session):
+
+```bash
+cd deploy && STEAM_LOGIN=your_steam_username ./steam-login.sh
+```
+
+Or do it manually: log in once with `steamcmd` to create a valid session:
 
 ```shell
 mkdir Steam && chown 1000:1000 Steam
@@ -278,6 +285,100 @@ and never overwritten. If your server volume was first created with an image
 older than timestamp `1656497302`, edit line 15 of
 `<your-volume>/arkmanager/arkmanager.cfg` and replace it with:
 `steamlogin="${STEAM_LOGIN}"`
+
+## Troubleshooting
+
+### `[S_API FAIL] SteamAPI_Init() failed` in the logs
+
+Harmless. This message shows up on virtually every steamcmd-based dedicated
+server (there is no Steam client running inside the container) and is **not**
+the reason your server is unreachable.
+
+### Log lines full of backslashes (`TheIsland\?SessionName=My\ Server`)
+
+Also harmless — arkmanager logs the launch command in shell-escaped form.
+The server receives the unescaped values.
+
+### Server does not show up in the server list / cannot connect
+
+- ARK speaks **UDP**. All three UDP ports (`7777`, `7778`, `27015`) must be
+  published *and* forwarded in your router/firewall; `7778` must stay game
+  client port +1.
+- The in-game server browser is slow and unreliable. Test via the Steam
+  client instead: *View → Game Servers → Favorites → Add* `your-ip:27015`.
+- Give a freshly started server several minutes before it responds to
+  queries — map loading and mod installs take time.
+- Docker Desktop on macOS/Windows has flaky UDP port forwarding. On a Linux
+  host, `network_mode: host` (drop the `ports:` section) is the most reliable
+  setup if the lists stay empty.
+- Port-remapping tunnel services (playit.gg and friends) break ARK's
+  assumption that the raw socket port is game port +1 and that the query port
+  it announces is reachable — prefer plain port forwarding.
+
+### Changes to `Game.ini` / `GameUserSettings.ini` disappear
+
+The ARK **server itself** rewrites both files on startup and shutdown — that
+is game behavior, not this image. Stop the container first, then edit, then
+start:
+
+```bash
+docker stop -t 300 ark-server
+vim "${HOME}/ark-server/GameUserSettings.ini"
+docker start ark-server
+```
+
+Also note that settings supplied on the command line (via the environment
+variables / arkmanager) override the corresponding INI values.
+
+### How much RAM / disk do I need?
+
+Plan with **at least 8 GB of RAM** (more with mods and larger maps — ARK is
+hungry) and **~25 GB of disk** for the base install, plus headroom for
+staging, backups and mods. Memory can be capped with docker's usual
+`mem_limit` / `deploy.resources` settings, but if the limit is below what the
+map needs the server will simply be OOM-killed.
+
+### Restore a backup
+
+`arkmanager restore` must not run while the server is up — the next autosave
+would overwrite the restored files again. Use a throwaway container on the
+stopped volume:
+
+```bash
+# 1. stop the server gracefully (world save)
+docker stop -t 300 ark-server
+
+# 2. restore (picks the most recent backup; pass a backup file to choose one)
+docker run --rm -it -v "${HOME}/ark-server:/app" --entrypoint bash hermsi/ark-server \
+  -c 'rm -rf /etc/arkmanager && ln -s /app/arkmanager /etc/arkmanager && gosu steam arkmanager restore'
+
+# 3. start the server again
+docker start ark-server
+```
+
+If you run with `PUID`/`PGID`, replace `gosu steam` with `gosu <PUID>:<PGID>`
+(gosu accepts numeric ids) so the restored files get the right owner.
+
+### Xbox crossplay?
+
+Not possible with this image. ASE's `-crossplay` flag covers **Steam and
+Epic** players only; console crossplay requires the Windows-Store/"Play
+Anywhere" server or ARK: Survival Ascended — both out of scope here.
+
+### arm64 / Raspberry Pi / Apple Silicon?
+
+Not possible — see [Architecture](#architecture): the ARK server binary only
+exists for x86-64.
+
+### Mods fail to download / `No cached credentials`
+
+Non-anonymous content requires a persistent
+[Steam login session](#configure-a-steam-login-session). If an interactive
+login dies with `Assertion Failed: Failed to write file after download`,
+delete the mounted `Steam` session directory and log in again (a known
+steamcmd quirk — accounts using the Steam Guard **mobile authenticator**
+work most reliably); the bundled
+[`deploy/steam-login.sh`](deploy/steam-login.sh) automates exactly that.
 
 ## Architecture
 

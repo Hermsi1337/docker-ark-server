@@ -15,7 +15,7 @@ services:
     #  context: ../.
     volumes:
       # # This setup is necessary if you have to download a non-anonymous appID/modID
-      # ${STEAM_SESSION_VOLUME}:/home/steam/Steam
+      #- ${STEAM_SESSION_VOLUME}:/home/steam/Steam
       - ${ARK_SERVER_VOLUME}:/app
     environment:
       # # This setup is necessary if you have to download a non-anonymous appID/modID
