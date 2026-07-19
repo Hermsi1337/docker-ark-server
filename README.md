@@ -186,6 +186,9 @@ The main game config files are located at:
 
 The entrypoint symlinks both of them into the volume root, so on the host you
 can simply edit `<your-volume>/Game.ini` and `<your-volume>/GameUserSettings.ini`.
+If an upload replaces one of these symlinks with a regular file, the entrypoint
+adopts the uploaded content as the real config on the next start (keeping the
+previous one as `.bak`) and re-creates the symlink.
 
 The arkmanager configuration (`arkmanager.cfg` and the `main` instance config)
 persists in `<your-volume>/arkmanager/`. The bundled templates are only copied

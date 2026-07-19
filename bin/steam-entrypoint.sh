@@ -111,8 +111,10 @@ function assert_free_disk_space() {
   fi
 
   # repair installs already have most content on disk and steamcmd validate
-  # only fetches what is missing - the full-size gate is for fresh installs
-  if [[ -d "${ARK_SERVER_VOLUME}/server/ShooterGame" ]]; then
+  # only fetches what is missing - the full-size gate is for fresh installs.
+  # Content is only ever created by the install path (not the config-symlink
+  # healing above), so it reliably marks a previous install attempt.
+  if [[ -d "${ARK_SERVER_VOLUME}/server/ShooterGame/Content" ]]; then
     return
   fi
 
@@ -166,10 +168,31 @@ create_missing_dir "${ARK_SERVER_VOLUME}/log" "${ARK_SERVER_VOLUME}/backup" "${A
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkmanager.cfg"
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
 
-[[ -L "${ARK_SERVER_VOLUME}/Game.ini" ]] ||
-  ln -s ./server/ShooterGame/Saved/Config/LinuxServer/Game.ini Game.ini
-[[ -L "${ARK_SERVER_VOLUME}/GameUserSettings.ini" ]] ||
-  ln -s ./server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini GameUserSettings.ini
+# Game.ini and GameUserSettings.ini in the volume root are convenience
+# symlinks to the real config files. Users regularly replace them with
+# regular files by accident (e.g. via SFTP upload) - in that case adopt the
+# uploaded content as the real config and re-create the symlink, instead of
+# dying on 'ln: File exists'.
+CONFIG_DIR="./server/ShooterGame/Saved/Config/LinuxServer"
+for INI_FILE in Game.ini GameUserSettings.ini; do
+  INI_LINK="${ARK_SERVER_VOLUME}/${INI_FILE}"
+  if [[ -e "${INI_LINK}" ]] && [[ ! -L "${INI_LINK}" ]]; then
+    if [[ ! -f "${INI_LINK}" ]]; then
+      echo "${INI_LINK} exists but is not a file - moving it aside..."
+      mv "${INI_LINK}" "${INI_LINK}.invalid.$(date +%s)"
+    else
+      echo "${INI_LINK} is a regular file but should be a symlink to ${CONFIG_DIR}/${INI_FILE} - fixing..."
+      mkdir -p "${CONFIG_DIR}"
+      if [[ -d "${CONFIG_DIR}/${INI_FILE}" ]]; then
+        mv "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.invalid.$(date +%s)"
+      elif [[ -f "${CONFIG_DIR}/${INI_FILE}" ]]; then
+        cp -a "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.bak"
+      fi
+      mv -f "${INI_LINK}" "${CONFIG_DIR}/${INI_FILE}"
+    fi
+  fi
+  [[ -L "${INI_LINK}" ]] || ln -s "${CONFIG_DIR}/${INI_FILE}" "${INI_FILE}"
+done
 
 if needs_install; then
   echo "No game files found. Installing..."
