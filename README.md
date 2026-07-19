@@ -132,6 +132,7 @@ Basic configuration is done with environment variables:
 | UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always game client port +1) |
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
+| SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
 | DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
 
 ### Graceful shutdown
