@@ -111,8 +111,10 @@ function assert_free_disk_space() {
   fi
 
   # repair installs already have most content on disk and steamcmd validate
-  # only fetches what is missing - the full-size gate is for fresh installs
-  if [[ -d "${ARK_SERVER_VOLUME}/server/ShooterGame" ]]; then
+  # only fetches what is missing - the full-size gate is for fresh installs.
+  # Content is only ever created by the install path (not the config-symlink
+  # healing above), so it reliably marks a previous install attempt.
+  if [[ -d "${ARK_SERVER_VOLUME}/server/ShooterGame/Content" ]]; then
     return
   fi
 
@@ -175,12 +177,19 @@ CONFIG_DIR="./server/ShooterGame/Saved/Config/LinuxServer"
 for INI_FILE in Game.ini GameUserSettings.ini; do
   INI_LINK="${ARK_SERVER_VOLUME}/${INI_FILE}"
   if [[ -e "${INI_LINK}" ]] && [[ ! -L "${INI_LINK}" ]]; then
-    echo "${INI_LINK} is a regular file but should be a symlink to ${CONFIG_DIR}/${INI_FILE} - fixing..."
-    mkdir -p "${CONFIG_DIR}"
-    if [[ -f "${CONFIG_DIR}/${INI_FILE}" ]]; then
-      cp -a "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.bak"
+    if [[ ! -f "${INI_LINK}" ]]; then
+      echo "${INI_LINK} exists but is not a file - moving it aside..."
+      mv "${INI_LINK}" "${INI_LINK}.invalid.$(date +%s)"
+    else
+      echo "${INI_LINK} is a regular file but should be a symlink to ${CONFIG_DIR}/${INI_FILE} - fixing..."
+      mkdir -p "${CONFIG_DIR}"
+      if [[ -d "${CONFIG_DIR}/${INI_FILE}" ]]; then
+        mv "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.invalid.$(date +%s)"
+      elif [[ -f "${CONFIG_DIR}/${INI_FILE}" ]]; then
+        cp -a "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.bak"
+      fi
+      mv -f "${INI_LINK}" "${CONFIG_DIR}/${INI_FILE}"
     fi
-    mv -f "${INI_LINK}" "${CONFIG_DIR}/${INI_FILE}"
   fi
   [[ -L "${INI_LINK}" ]] || ln -s "${CONFIG_DIR}/${INI_FILE}" "${INI_FILE}"
 done
