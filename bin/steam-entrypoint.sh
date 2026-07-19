@@ -16,6 +16,8 @@ trap 'exit 143' TERM INT
 
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
+    [[ "${VALIDATE_ON_START}" != "true" ]] ||
+      echo "WARNING: VALIDATE_ON_START has no effect because UPDATE_ON_START is not 'true' - skipping validation"
     return
   fi
 
