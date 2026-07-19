@@ -110,6 +110,12 @@ function assert_free_disk_space() {
     return
   fi
 
+  # repair installs already have most content on disk and steamcmd validate
+  # only fetches what is missing - the full-size gate is for fresh installs
+  if [[ -d "${ARK_SERVER_VOLUME}/server/ShooterGame" ]]; then
+    return
+  fi
+
   AVAILABLE_MB="$(df -Pm "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}')"
   if [[ -n "${AVAILABLE_MB}" ]] && (( AVAILABLE_MB < REQUIRED_MB )); then
     echo "ERROR: Not enough free disk space on ${ARK_SERVER_VOLUME}:"
@@ -186,7 +192,8 @@ if needs_install; then
 
   # steamcmd occasionally reports success although the download is incomplete
   # (e.g. 'state is 0x202 after update job' on full disks) - verify it
-  if needs_install > /dev/null; then
+  if VERIFY_OUTPUT="$(needs_install)"; then
+    echo "${VERIFY_OUTPUT}"
     echo "ERROR: Installation finished but the server files are still incomplete."
     echo "       Check the steamcmd output above and the free disk space on ${ARK_SERVER_VOLUME}"
     echo "       ($(df -Ph "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}') left), then restart the container to retry."
