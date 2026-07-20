@@ -31,8 +31,16 @@ jobs:
 
       - name: Determine ARK server tools version
         id: ark_tools
+        env:
+          # authenticated: unauthenticated calls share the runner IP's tiny
+          # rate limit and silently returned nothing under pressure
+          GH_TOKEN: ${{ github.token }}
         run: |
-          ARK_TOOLS_VERSION="$(curl -fsSL 'https://api.github.com/repos/arkmanager/ark-server-tools/commits' | jq -r '.[0].sha')"
+          ARK_TOOLS_VERSION="$(gh api repos/arkmanager/ark-server-tools/commits --jq '.[0].sha')"
+          if [[ ! "${ARK_TOOLS_VERSION}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::could not resolve the ark-server-tools master commit (got '${ARK_TOOLS_VERSION}')"
+            exit 1
+          fi
           echo "version=${ARK_TOOLS_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Check shell script syntax
