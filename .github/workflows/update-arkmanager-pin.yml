@@ -1,0 +1,89 @@
+name: Update arkmanager pin
+
+# Dependabot cannot track the ARK_TOOLS_VERSION build ARG (its docker
+# ecosystem only understands FROM lines), so this workflow does the
+# equivalent: check the latest ark-server-tools release once a week and
+# open a bump PR when the Dockerfile default is behind.
+#
+# The pin only affects local/manual builds - published images are always
+# built against the current ark-server-tools master commit resolved at
+# build time (see build-and-deploy.yml).
+
+on:
+  schedule:
+    - cron: '0 1 * * 1'  # every monday at 01:00 UTC, before the weekly image build
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-arkmanager-pin
+  cancel-in-progress: true
+
+jobs:
+  update-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve latest ark-server-tools release
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$(gh api repos/arkmanager/ark-server-tools/releases/latest --jq .tag_name)"
+          # the Dockerfile picks netinstall's --tag vs --commit based on the
+          # leading 'v'; this also guards the sed below against odd tag names
+          if [[ ! "${TAG}" =~ ^v[0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "Unexpected release tag format: '${TAG}'" >&2
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Read current pin
+        id: current
+        run: |
+          TAG="$(sed -nE 's/^ARG +ARK_TOOLS_VERSION="([^"]+)".*/\1/p' Dockerfile)"
+          if [[ -z "${TAG}" ]]; then
+            echo "Could not find the ARK_TOOLS_VERSION ARG in the Dockerfile" >&2
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Dockerfile
+        if: steps.latest.outputs.tag != steps.current.outputs.tag
+        env:
+          NEW_TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          sed -i -E "s/^(ARG +ARK_TOOLS_VERSION=\")[^\"]+(\")/\1${NEW_TAG}\2/" Dockerfile
+          grep -qF "ARK_TOOLS_VERSION=\"${NEW_TAG}\"" Dockerfile || {
+            echo "::error::sed did not update the Dockerfile pin - has the ARG line format changed?"
+            exit 1
+          }
+          grep -n 'ARK_TOOLS_VERSION' Dockerfile
+
+      - name: Open pull request
+        if: steps.latest.outputs.tag != steps.current.outputs.tag
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: bot/update-arkmanager-pin
+          delete-branch: true
+          commit-message: "chore: bump arkmanager pin to ${{ steps.latest.outputs.tag }}"
+          title: "chore: bump arkmanager pin to ${{ steps.latest.outputs.tag }}"
+          body: |
+            Bumps the `ARK_TOOLS_VERSION` default in the `Dockerfile` from
+            `${{ steps.current.outputs.tag }}` to `${{ steps.latest.outputs.tag }}`.
+
+            Release notes: https://github.com/arkmanager/ark-server-tools/releases/tag/${{ steps.latest.outputs.tag }}
+
+            The pin only affects **local/manual builds** — published images are
+            always built against the current ark-server-tools `master` commit
+            resolved at build time, so this is a hygiene bump for reproducible
+            local builds.
+
+            > Note: PRs opened by a workflow with the default `GITHUB_TOKEN` do
+            > not trigger the preview build. Close and reopen this PR if you
+            > want the smoke build to run before merging.
