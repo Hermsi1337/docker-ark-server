@@ -59,11 +59,15 @@ jobs:
           NEW_TAG: ${{ steps.latest.outputs.tag }}
         run: |
           sed -i -E "s/^(ARG +ARK_TOOLS_VERSION=\")[^\"]+(\")/\1${NEW_TAG}\2/" Dockerfile
+          grep -qF "ARK_TOOLS_VERSION=\"${NEW_TAG}\"" Dockerfile || {
+            echo "::error::sed did not update the Dockerfile pin - has the ARG line format changed?"
+            exit 1
+          }
           grep -n 'ARK_TOOLS_VERSION' Dockerfile
 
       - name: Open pull request
         if: steps.latest.outputs.tag != steps.current.outputs.tag
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: bot/update-arkmanager-pin
           delete-branch: true
