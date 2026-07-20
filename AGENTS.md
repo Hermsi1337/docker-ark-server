@@ -40,6 +40,7 @@ downstream compose files and scripts.
 | `deploy/` | Example `docker-compose.yml` + `example.env` for end users |
 | `.github/workflows/build-and-deploy.yml` | "Build and Publish" — builds and pushes to all three registries |
 | `.github/workflows/deploy-preview.yml` | "Build PR Preview" — builds PRs, pushes `pr-<n>` for same-repo PRs |
+| `.github/workflows/update-arkmanager-pin.yml` | "Update arkmanager pin" — weekly bump PR for the `ARK_TOOLS_VERSION` default |
 | `.github/dependabot.yml` | Weekly `github-actions` version updates |
 
 ## CI/CD
@@ -61,6 +62,16 @@ downstream compose files and scripts.
   secrets and never push. Same-repo PRs push `pr-<n>`, and only if the
   registry secrets are actually configured (the eligibility step checks for
   `DOCKERHUB_TOKEN`). Keep this property when editing the workflow.
+
+**Update arkmanager pin** (`update-arkmanager-pin.yml`):
+
+- Triggers: weekly cron **Mondays 01:00 UTC** and manual `workflow_dispatch`.
+- Dependabot cannot track a build ARG, so this workflow checks the latest
+  ark-server-tools release and opens a bump PR for the Dockerfile default.
+- Uses only the built-in `GITHUB_TOKEN` — which means the bump PR does **not**
+  trigger the preview build automatically (GitHub suppresses workflow-created
+  events); close/reopen the PR to run it, or rely on the master build after
+  merge. The actions it uses are themselves covered by Dependabot.
 
 **Required repository secrets:**
 
@@ -86,14 +97,17 @@ downstream compose files and scripts.
 
 ## Common tasks
 
-- **Bump the arkmanager pin:** check
+- **Bump the arkmanager pin:** automated — the "Update arkmanager pin"
+  workflow opens a weekly PR when a new ark-server-tools release exists;
+  review and merge it. Manual fallback: check
   `gh api repos/arkmanager/ark-server-tools/releases/latest --jq .tag_name`,
   update the `ARK_TOOLS_VERSION` ARG default in `Dockerfile`, PR it.
 - **Action version updates:** Dependabot opens weekly PRs; review the
   changelog, merge. The PR preview build doubles as the smoke test.
 - **Scheduled workflow got disabled?** GitHub disables cron workflows after
-  ~60 days without repository activity. Re-enable with
-  `gh workflow enable "Build and Publish"` (or via the Actions tab), then
+  ~60 days without repository activity — this affects both "Build and Publish"
+  and "Update arkmanager pin". Re-enable with
+  `gh workflow enable "<name>"` (or via the Actions tab), then
   `gh workflow run "Build and Publish"` for an immediate build.
 - **Manual release:** `gh workflow run "Build and Publish"` on `master`.
 
