@@ -227,7 +227,10 @@ SUB_KEYS=()
 if [[ -n "${SUB_INSTANCE_KEYS}" ]]; then
   IFS=',' read -ra RAW_SUB_KEYS <<< "${SUB_INSTANCE_KEYS}"
   for RAW_KEY in "${RAW_SUB_KEYS[@]}"; do
-    KEY="${RAW_KEY//[[:space:]]/}"
+    # trim surrounding whitespace only - embedded whitespace must fail the
+    # charset check below instead of being silently collapsed
+    KEY="${RAW_KEY#"${RAW_KEY%%[![:space:]]*}"}"
+    KEY="${KEY%"${KEY##*[![:space:]]}"}"
     [[ -n "${KEY}" ]] || continue
     if [[ ! "${KEY}" =~ ^[A-Za-z0-9_]+$ ]]; then
       echo "ERROR: invalid SUB_INSTANCE_KEYS entry '${RAW_KEY}'."
@@ -245,11 +248,12 @@ if [[ -n "${SUB_INSTANCE_KEYS}" ]]; then
 fi
 
 # the sub instance port defaults are derived arithmetically - empty or
-# non-numeric ports would silently evaluate to 0 in bash arithmetic
+# non-numeric ports would silently evaluate to 0, and a leading zero would
+# make bash read the value as octal
 if [[ ${#SUB_KEYS[@]} -gt 0 ]]; then
   for PORT_VAR in GAME_CLIENT_PORT SERVER_LIST_PORT RCON_PORT; do
-    if [[ ! "${!PORT_VAR}" =~ ^[0-9]+$ ]]; then
-      echo "ERROR: ${PORT_VAR}='${!PORT_VAR}' must be a plain port number when SUB_INSTANCE_KEYS is set."
+    if [[ ! "${!PORT_VAR}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "ERROR: ${PORT_VAR}='${!PORT_VAR}' must be a plain port number (no leading zero) when SUB_INSTANCE_KEYS is set."
       exit 1
     fi
   done
