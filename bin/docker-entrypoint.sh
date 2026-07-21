@@ -54,6 +54,15 @@ for DIR in "${ARK_SERVER_VOLUME}" "/cluster"; do
   chown "${STEAM_USER}": "${DIR}" || echo "Failed setting rights on ${DIR}, continuing startup..."
 done
 
+# cluster transfer data (uploaded characters/dinos/items) lives in /cluster -
+# without a mounted volume it would silently vanish when the container is
+# recreated (image update, compose down/up, watchtower)
+if [[ -n "${CLUSTER_ID}" ]] && ! mountpoint -q /cluster 2>/dev/null; then
+  echo "WARNING: CLUSTER_ID is set but /cluster is not a mounted volume."
+  echo "         Uploaded characters/dinos/items would be LOST when this container"
+  echo "         is recreated - mount a volume at /cluster (see the README)."
+fi
+
 if [[ ! -d ${ARK_TOOLS_DIR} ]]; then
   mv "/etc/arkmanager" "${ARK_TOOLS_DIR}"
   rm -f "${ARK_TOOLS_DIR}/arkmanager.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"

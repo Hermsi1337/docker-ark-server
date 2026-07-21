@@ -138,7 +138,7 @@ Basic configuration is done with environment variables:
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
 | SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
-| CLUSTER_ID | MyCluster | Cluster id for item/character transfer, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
+| CLUSTER_ID | `empty` | Setting a cluster id enables cluster mode (item/character transfer) and requires a volume mounted at `/cluster`, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | SUB_INSTANCE_KEYS | `empty` | Additional map instances to run in this container, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
 
@@ -226,9 +226,12 @@ vim "${HOME}/ark-server/crontab"
 Add your desired cronjobs with valid syntax (they run as the `steam` user):
 
 ```bash
-0 4 * * * arkmanager update --warn --update-mods >> /app/log/crontab.log 2>&1
-0 0 * * * arkmanager backup >> /app/log/crontab.log 2>&1
+0 4 * * * arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
+0 0 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
 ```
+
+(`@all` targets every instance — identical to `@main` on a single-map server
+and required on [multi-map servers](#cluster-and-multi-map-support).)
 
 The container environment is exported to `/app/environment` on every start and
 loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
@@ -293,13 +296,22 @@ older than timestamp `1656497302`, edit line 15 of
 ## Cluster and multi-map support
 
 Two building blocks turn this image into an ARK cluster (item/character/dino
-transfer between maps via the obelisks):
+transfer between maps via the obelisks). Both are **off by default** — a
+plain single-map server behaves exactly as before:
 
-- **A shared cluster volume + `CLUSTER_ID`:** every container that mounts the
-  same volume at `/cluster` and uses the same `CLUSTER_ID` forms one cluster.
-- **Sub instances:** a single container can additionally run several maps off
-  the same server installation — binaries and mods are shared, which saves a
-  full ~25GB download per map.
+- **Cluster mode — opt-in via `CLUSTER_ID`:** every container that uses the
+  same `CLUSTER_ID` and mounts the same volume at `/cluster` forms one
+  cluster. ⚠️ **Mounting `/cluster` is required** when `CLUSTER_ID` is set:
+  transfer data (uploaded characters/dinos/items) is stored there, and
+  without a mounted volume it is lost when the container is recreated.
+- **Sub instances — opt-in via `SUB_INSTANCE_KEYS`:** a single container can
+  additionally run several maps off the same server installation — binaries
+  and mods are shared, which saves a full ~25GB download per map. Budget
+  roughly **6–8 GB RAM and 1–2 minutes of stop-grace time per instance**
+  (`stop_grace_period` in the examples below).
+
+To transfer between the maps of one container, combine both: set
+`SUB_INSTANCE_KEYS` *and* `CLUSTER_ID` (plus the `/cluster` mount).
 
 ### Sub instance variables
 
@@ -322,10 +334,15 @@ back to sensible defaults derived from the main instance (`n` = position in
 | SUB_&lt;KEY&gt;_ADMIN_PASSWORD | `${ADMIN_PASSWORD}` | Per-instance admin password |
 | SUB_&lt;KEY&gt;_MAX_PLAYERS | `${MAX_PLAYERS}` | Per-instance player limit |
 
-Remember to publish the additional ports. The sub instance configs
+Remember to publish the additional ports. Keys (and therefore the
+`SUB_<KEY>_*` variable names) may only contain letters, digits and
+underscores, and the variable lookup is **case-sensitive** — key `Fjordur`
+reads `SUB_Fjordur_*`, not `SUB_FJORDUR_*`. The sub instance configs
 (`/app/arkmanager/instances/sub.*.cfg`) are regenerated from the template on
 every start — persistent tuning belongs into the `SUB_<KEY>_*` variables or
-the shared `Game.ini`/`GameUserSettings.ini`.
+the shared `Game.ini`/`GameUserSettings.ini`. When sharing `/cluster`
+between containers, run them all with the same `PUID`/`PGID` so they can
+read each other's transfer data.
 
 arkmanager commands accept an instance (`@main`, `@sub.Fjordur`) or `@all`:
 
@@ -335,8 +352,10 @@ docker exec -u steam ark-server arkmanager backup @all
 ```
 
 The bundled [graceful shutdown](#graceful-shutdown) warns, saves and stops
-**all** instances. For [cronjobs](#add-cronjobs) in a multi-map setup, target
-all instances explicitly, e.g. `arkmanager backup @all`.
+**all** instances. For [cronjobs](#add-cronjobs) in a multi-map setup, always
+target `@all` — especially for updates: `arkmanager update @all --warn`
+stops and restarts every instance, while an update of a single instance
+would swap the shared server binaries underneath the still-running others.
 
 ### Example: 3 maps in 1 container
 
@@ -406,6 +425,7 @@ services:
       - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
       - GAME_CLIENT_PORT=${GAME_CLIENT_PORT}
       - SERVER_LIST_PORT=${SERVER_LIST_PORT}
+      - RCON_PORT=${RCON_PORT}
       - GAME_MOD_IDS=${GAME_MOD_IDS}
       - BETA=${BETA}
       - CLUSTER_ID=${CLUSTER_ID}
@@ -413,7 +433,7 @@ services:
       - "${GAME_CLIENT_PORT}:${GAME_CLIENT_PORT}/udp"
       - "${UDP_SOCKET_PORT}:${UDP_SOCKET_PORT}/udp"
       - "${SERVER_LIST_PORT}:${SERVER_LIST_PORT}/udp"
-      - "${RCON_PORT}:27020/tcp"
+      - "${RCON_PORT}:${RCON_PORT}/tcp"
 ```
 
 ```bash
