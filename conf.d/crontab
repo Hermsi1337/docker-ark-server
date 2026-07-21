@@ -18,9 +18,12 @@ BASH_ENV=/app/environment
 # WARNING : the container timezone may not match your host timezone.
 #           You can sync them with option -v /etc/localtime:/etc/localtime:ro or -e "TZ=UTC"
 #
+# @all targets every instance - identical to @main on a single-map server,
+# and required on multi-map servers (an update swaps the shared binaries,
+# so it must stop/restart all instances, not just one)
 # Example : update every day at 4am
-# 0 4 * * * arkmanager update --warn --update-mods >> /app/log/crontab.log 2>&1
+# 0 4 * * * arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
 # Example : backup every 15min
-# */15 * * * * arkmanager backup >> /app/log/crontab.log 2>&1
+# */15 * * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
 # Example : backup every day at midnight
-# 0 0 * * * arkmanager backup >> /app/log/crontab.log 2>&1
+# 0 0 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1

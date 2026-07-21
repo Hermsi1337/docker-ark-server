@@ -114,6 +114,7 @@ Basic configuration is done with environment variables:
 |:-----------------:|:----------------------------------------------:|:------------------------------------------------------------------------------------------------------------------------------------:|
 | SESSION_NAME | Dockerized ARK Server by github.com/hermsi1337 | The name of your ARK session, visible in the in-game server browser |
 | SERVER_MAP | TheIsland | Desired map you want to play |
+| SERVER_MAP_MOD_ID | `empty` | Workshop mod id of a modded map (the map itself is then set via `SERVER_MAP`) |
 | SERVER_PASSWORD | YouShallNotPass | Server password required to join your session (overwrite with an empty string to disable password authentication) |
 | ADMIN_PASSWORD | Th155houldD3f1n3tlyB3Chang3d | Admin password for the in-game admin console and RCON |
 | MAX_PLAYERS | 20 | Maximum number of players in your session |
@@ -137,13 +138,16 @@ Basic configuration is done with environment variables:
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
 | SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
+| CLUSTER_ID | `empty` | Setting a cluster id enables cluster mode (item/character transfer) and requires a volume mounted at `/cluster`, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
+| SUB_INSTANCE_KEYS | `empty` | Additional map instances to run in this container, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
 
 ### Graceful shutdown
 
 On `docker stop` / `docker restart` the entrypoint warns players
-(`WARN_ON_STOP`), saves the world via `arkmanager stop --saveworld` and
-optionally creates a backup (`BACKUP_ON_STOP`). Docker only waits 10 seconds
+(`WARN_ON_STOP`), saves the world of every instance via
+`arkmanager stop @all --saveworld` and optionally creates a backup
+(`BACKUP_ON_STOP`). Docker only waits 10 seconds
 by default before force-killing the container — far too short for an ARK
 world save. Raise the grace period, otherwise you risk losing progress:
 
@@ -173,7 +177,7 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/staging` | Staging directory for server updates |
 | `/app/crontab` | Cron definitions loaded at container start |
 | `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
-| `/app/arkmanager` | Persisted arkmanager configuration (global + instance) |
+| `/app/arkmanager` | Persisted arkmanager configuration (global + instance). `instances/sub.*.cfg` are auto-regenerated on every start |
 | `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files |
 
 ### Tweak the configuration
@@ -222,9 +226,12 @@ vim "${HOME}/ark-server/crontab"
 Add your desired cronjobs with valid syntax (they run as the `steam` user):
 
 ```bash
-0 4 * * * arkmanager update --warn --update-mods >> /app/log/crontab.log 2>&1
-0 0 * * * arkmanager backup >> /app/log/crontab.log 2>&1
+0 4 * * * arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
+0 0 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
 ```
+
+(`@all` targets every instance — identical to `@main` on a single-map server
+and required on [multi-map servers](#cluster-and-multi-map-support).)
 
 The container environment is exported to `/app/environment` on every start and
 loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
@@ -285,6 +292,175 @@ and never overwritten. If your server volume was first created with an image
 older than timestamp `1656497302`, edit line 15 of
 `<your-volume>/arkmanager/arkmanager.cfg` and replace it with:
 `steamlogin="${STEAM_LOGIN}"`
+
+## Cluster and multi-map support
+
+Two building blocks turn this image into an ARK cluster (item/character/dino
+transfer between maps via the obelisks). Both are **off by default** — a
+plain single-map server behaves exactly as before:
+
+- **Cluster mode — opt-in via `CLUSTER_ID`:** every container that uses the
+  same `CLUSTER_ID` and mounts the same volume at `/cluster` forms one
+  cluster. ⚠️ **Mounting `/cluster` is required** when `CLUSTER_ID` is set:
+  transfer data (uploaded characters/dinos/items) is stored there, and
+  without a mounted volume it is lost when the container is recreated.
+- **Sub instances — opt-in via `SUB_INSTANCE_KEYS`:** a single container can
+  additionally run several maps off the same server installation — binaries
+  and mods are shared, which saves a full ~25GB download per map. Budget
+  roughly **6–8 GB RAM and 1–2 minutes of stop-grace time per instance**
+  (`stop_grace_period` in the examples below).
+
+To transfer between the maps of one container, combine both: set
+`SUB_INSTANCE_KEYS` *and* `CLUSTER_ID` (plus the `/cluster` mount).
+
+### Sub instance variables
+
+Define additional instances with `SUB_INSTANCE_KEYS` (comma separated). Every
+instance can then be tuned with `SUB_<KEY>_*` variables; unset values fall
+back to sensible defaults derived from the main instance (`n` = position in
+`SUB_INSTANCE_KEYS`, starting at 1):
+
+| Variable | Default value | Explanation |
+|---|---|---|
+| SUB_&lt;KEY&gt;_SERVER_MAP | `<KEY>` | Map of the sub instance |
+| SUB_&lt;KEY&gt;_SERVER_MAP_MOD_ID | `empty` | Workshop mod id for modded maps |
+| SUB_&lt;KEY&gt;_SESSION_NAME | `${SESSION_NAME}<n+1>` | Session name of the sub instance |
+| SUB_&lt;KEY&gt;_GAME_MOD_IDS | `${GAME_MOD_IDS}` | Mods of the sub instance |
+| SUB_&lt;KEY&gt;_SAVE_DIR | sub.&lt;KEY&gt; | Save directory below `ShooterGame/Saved` |
+| SUB_&lt;KEY&gt;_GAME_CLIENT_PORT | `GAME_CLIENT_PORT + 2n` | Game client port (each instance also occupies port+1) |
+| SUB_&lt;KEY&gt;_SERVER_LIST_PORT | `SERVER_LIST_PORT + n` | Server-list (query) port |
+| SUB_&lt;KEY&gt;_RCON_PORT | `RCON_PORT + n` | RCON port |
+| SUB_&lt;KEY&gt;_SERVER_PASSWORD | `${SERVER_PASSWORD}` | Per-instance server password |
+| SUB_&lt;KEY&gt;_ADMIN_PASSWORD | `${ADMIN_PASSWORD}` | Per-instance admin password |
+| SUB_&lt;KEY&gt;_MAX_PLAYERS | `${MAX_PLAYERS}` | Per-instance player limit |
+
+Remember to publish the additional ports. Keys (and therefore the
+`SUB_<KEY>_*` variable names) may only contain letters, digits and
+underscores, and the variable lookup is **case-sensitive** — key `Fjordur`
+reads `SUB_Fjordur_*`, not `SUB_FJORDUR_*`. The sub instance configs
+(`/app/arkmanager/instances/sub.*.cfg`) are regenerated from the template on
+every start — persistent tuning belongs into the `SUB_<KEY>_*` variables or
+the shared `Game.ini`/`GameUserSettings.ini`. When sharing `/cluster`
+between containers, run them all with the same `PUID`/`PGID` so they can
+read each other's transfer data.
+
+arkmanager commands accept an instance (`@main`, `@sub.Fjordur`) or `@all`:
+
+```bash
+docker exec -u steam ark-server arkmanager status @all
+docker exec -u steam ark-server arkmanager backup @all
+```
+
+The bundled [graceful shutdown](#graceful-shutdown) warns, saves and stops
+**all** instances. For [cronjobs](#add-cronjobs) in a multi-map setup, always
+target `@all` — especially for updates: `arkmanager update @all --warn`
+stops and restarts every instance, while an update of a single instance
+would swap the shared server binaries underneath the still-running others.
+
+### Example: 3 maps in 1 container
+
+<details>
+<summary>docker-compose.yml</summary>
+
+```yaml
+services:
+  server:
+    container_name: ark_server
+    image: hermsi/ark-server:latest
+    stop_grace_period: 5m
+    volumes:
+      - ./app:/app
+      - ./cluster:/cluster
+    environment:
+      # === Main instance ===
+      - SESSION_NAME=Clusterized ARK Server
+      - SERVER_MAP=TheIsland
+      - SERVER_PASSWORD=YouShallNotPass
+      - ADMIN_PASSWORD=topsecret
+      - MAX_PLAYERS=20
+      # Main instance ports are the offset for the sub instance defaults
+      - GAME_CLIENT_PORT=7777  # sub instances use +2 increments
+      - SERVER_LIST_PORT=27015
+      - RCON_PORT=27020
+      # === Cluster ===
+      - CLUSTER_ID=MyCluster
+      # === Sub instances ===
+      - SUB_INSTANCE_KEYS=Fjordur,Caballus_P
+      - SUB_Caballus_P_SERVER_MAP_MOD_ID=1679826889
+    ports:
+      # Game client ports (2 per instance)
+      - "7777-7782:7777-7782/udp"
+      # Server-list ports (1 per instance)
+      - "27015-27017:27015-27017/udp"
+      # RCON ports (1 per instance)
+      - "27020-27022:27020-27022/tcp"
+```
+</details>
+
+### Example: 3 maps in 3 containers (shared cluster volume)
+
+<details>
+<summary>share/docker-compose.yml + per-server .env</summary>
+
+All servers symlink the same compose file and share the cluster volume;
+each server directory only differs in its `.env`:
+
+```yaml
+services:
+  server:
+    container_name: ${CONTAINER_NAME}
+    image: hermsi/ark-server:latest
+    stop_grace_period: 5m
+    volumes:
+      - ./app:/app
+      - ../share/cluster:/cluster
+    environment:
+      - SESSION_NAME=${SESSION_NAME}
+      - SERVER_MAP=${SERVER_MAP}
+      - SERVER_MAP_MOD_ID=${SERVER_MAP_MOD_ID}
+      - SERVER_PASSWORD=${SERVER_PASSWORD}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - MAX_PLAYERS=${MAX_PLAYERS}
+      - UPDATE_ON_START=${UPDATE_ON_START}
+      - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
+      - GAME_CLIENT_PORT=${GAME_CLIENT_PORT}
+      - SERVER_LIST_PORT=${SERVER_LIST_PORT}
+      - RCON_PORT=${RCON_PORT}
+      - GAME_MOD_IDS=${GAME_MOD_IDS}
+      - BETA=${BETA}
+      - CLUSTER_ID=${CLUSTER_ID}
+    ports:
+      - "${GAME_CLIENT_PORT}:${GAME_CLIENT_PORT}/udp"
+      - "${UDP_SOCKET_PORT}:${UDP_SOCKET_PORT}/udp"
+      - "${SERVER_LIST_PORT}:${SERVER_LIST_PORT}/udp"
+      - "${RCON_PORT}:${RCON_PORT}/tcp"
+```
+
+```bash
+# server1/.env
+CONTAINER_NAME=ark_island
+SESSION_NAME=My Island
+SERVER_MAP=TheIsland
+GAME_CLIENT_PORT=7777
+UDP_SOCKET_PORT=7778
+SERVER_LIST_PORT=27015
+RCON_PORT=27020
+CLUSTER_ID=MyCluster
+# ...
+
+# server2/.env
+CONTAINER_NAME=ark_caballus
+SESSION_NAME=My Caballus
+SERVER_MAP=Caballus_P
+SERVER_MAP_MOD_ID=1679826889
+GAME_CLIENT_PORT=7779
+UDP_SOCKET_PORT=7780
+SERVER_LIST_PORT=27016
+RCON_PORT=27021
+CLUSTER_ID=MyCluster
+# ...
+```
+</details>
 
 ## Troubleshooting
 

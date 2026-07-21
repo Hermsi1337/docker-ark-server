@@ -4,9 +4,7 @@ set -e
 
 [[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
 
-if [[ ! -d "${ARK_SERVER_VOLUME}" ]]; then
-  mkdir -p "${ARK_SERVER_VOLUME}"
-fi
+mkdir -p "${ARK_SERVER_VOLUME}" "/cluster"
 
 # Optionally remap the steam user to a custom UID/GID, e.g. to match the
 # owner of a bind mount on NAS systems (Synology, UGREEN, ...)
@@ -52,7 +50,18 @@ if [[ -n "${PUID}${PGID}" ]]; then
   fi
 fi
 
-chown "${STEAM_USER}": "${ARK_SERVER_VOLUME}" || echo "Failed setting rights on ${ARK_SERVER_VOLUME}, continuing startup..."
+for DIR in "${ARK_SERVER_VOLUME}" "/cluster"; do
+  chown "${STEAM_USER}": "${DIR}" || echo "Failed setting rights on ${DIR}, continuing startup..."
+done
+
+# cluster transfer data (uploaded characters/dinos/items) lives in /cluster -
+# without a mounted volume it would silently vanish when the container is
+# recreated (image update, compose down/up, watchtower)
+if [[ -n "${CLUSTER_ID}" ]] && ! mountpoint -q /cluster 2>/dev/null; then
+  echo "WARNING: CLUSTER_ID is set but /cluster is not a mounted volume."
+  echo "         Uploaded characters/dinos/items would be LOST when this container"
+  echo "         is recreated - mount a volume at /cluster (see the README)."
+fi
 
 if [[ ! -d ${ARK_TOOLS_DIR} ]]; then
   mv "/etc/arkmanager" "${ARK_TOOLS_DIR}"
@@ -78,4 +87,4 @@ crontab -u "${STEAM_USER}" "${ARK_SERVER_VOLUME}/crontab" || echo "Failed loadin
 
 service cron start
 
-exec gosu "${STEAM_USER}" /steam-entrypoint.sh $*
+exec gosu "${STEAM_USER}" /steam-entrypoint.sh "$@"
