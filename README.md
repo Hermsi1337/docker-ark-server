@@ -178,7 +178,7 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/crontab` | Cron definitions loaded at container start |
 | `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
 | `/app/arkmanager` | Persisted arkmanager configuration (global + instance). `instances/sub.*.cfg` are auto-regenerated on every start |
-| `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files |
+| `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files (dangling until the server has written them once) |
 
 ### Tweak the configuration
 
@@ -197,6 +197,25 @@ can simply edit `<your-volume>/Game.ini` and `<your-volume>/GameUserSettings.ini
 If an upload replaces one of these symlinks with a regular file, the entrypoint
 adopts the uploaded content as the real config on the next start (keeping the
 previous one as `.bak`) and re-creates the symlink.
+
+#### Where the INI defaults come from
+
+This image ships no `Game.ini` or `GameUserSettings.ini`, and it never writes
+into them. Both files are created by the ARK dedicated server itself the first
+time it starts, filled with Wildcard's stock defaults (`AllowThirdPersonPlayer`,
+`ServerCrosshair`, the whole `[ServerSettings]` block, and so on). Everything you
+find in a fresh `GameUserSettings.ini` is a vanilla game default, not a
+requirement of this container — none of those keys are needed to start the
+server, and you can change or delete any of them.
+
+The settings that actually keep this container running come from the environment
+variables and the arkmanager configuration, not from the INI files. arkmanager
+turns `ark_*` / `arkopt_*` / `arkflag_*` values into command-line arguments, and
+ARK gives command-line arguments precedence over the corresponding INI values. So
+if you want to control a setting through `GameUserSettings.ini`, comment out the
+matching `ark_*` line in `<your-volume>/arkmanager/arkmanager.cfg` or
+`<your-volume>/arkmanager/instances/main.cfg` first — otherwise the command line
+keeps overriding your edit.
 
 The arkmanager configuration (`arkmanager.cfg` and the `main` instance config)
 persists in `<your-volume>/arkmanager/`. The bundled templates are only copied
@@ -504,7 +523,8 @@ docker start ark-server
 ```
 
 Also note that settings supplied on the command line (via the environment
-variables / arkmanager) override the corresponding INI values.
+variables / arkmanager) override the corresponding INI values — see
+[Where the INI defaults come from](#where-the-ini-defaults-come-from).
 
 ### How much RAM / disk do I need?
 
