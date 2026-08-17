@@ -150,6 +150,64 @@ EOF
   fi
 }
 
+function add_discord_to_arkmanager_cfg() {
+  local config staged
+  # a user may have replaced the config with a symlink - work on its target,
+  # otherwise the rename below would swap the symlink for a regular file
+  config="$(readlink -f "${ARK_TOOLS_DIR}/arkmanager.cfg")"
+
+  # the marker is the guarded assignment, never a bare 'discordWebhookURL=':
+  # every volume created before this feature still holds the commented
+  # '# discordWebhookURL="https://discordapp.com/api/webhooks/..."' example
+  # that the template used to ship, and a looser marker would match it and
+  # skip the migration for exactly the users it exists for
+  if grep -qF '|| discordWebhookURL=' "${config}"; then
+    return
+  fi
+
+  echo "Adding Discord notification settings to the existing arkmanager.cfg ..."
+
+  # stage beside the config and rename it into place: arkmanager sources this
+  # file, so a half-written assignment would break every command. The staged
+  # name has to be unpredictable - $$ is always 1 in this container, and a
+  # symlink pre-placed at a known path would be written through
+  if ! staged="$(mktemp "${config}.discord.XXXXXX")"; then
+    echo "WARNING: could not stage ${config} (read-only?), continuing..."
+    return
+  fi
+  STAGED_CONFIG="${staged}"
+
+  if ! cp -p "${config}" "${staged}" || ! cat <<'EOF' >> "${staged}"
+
+# Discord notifications - active only when DISCORD_WEBHOOK_URL is set (see README)
+[ -z "${DISCORD_WEBHOOK_URL}" ] || discordWebhookURL="${DISCORD_WEBHOOK_URL}"
+EOF
+  then
+    echo "WARNING: could not write ${staged}, continuing without Discord notifications..."
+  elif ! mv "${staged}" "${config}"; then
+    echo "WARNING: could not replace ${config}, continuing without Discord notifications..."
+  fi
+
+  rm -f "${STAGED_CONFIG}"
+  STAGED_CONFIG=""
+}
+
+function warn_on_hardcoded_discord_webhook() {
+  local config
+
+  # arkmanager sources the global config first and the instance config after
+  # it, so a hardcoded URL in either one wins over the generated assignment
+  for config in "${ARK_TOOLS_DIR}/arkmanager.cfg" "${ARK_TOOLS_DIR}/instances/"*.cfg; do
+    [[ -f "${config}" ]] || continue
+
+    if grep -qE '^[[:space:]]*(export[[:space:]]+)?discordWebhookURL=' "${config}"; then
+      echo "WARNING: ${config} assigns discordWebhookURL directly."
+      echo "         That webhook keeps receiving notifications even when DISCORD_WEBHOOK_URL is empty."
+      echo "         Comment the line out to put the environment variable in charge."
+    fi
+  done
+}
+
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
 # variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
 # arkmanager instance name - restrict keys to a safe charset and fail loudly
@@ -304,8 +362,10 @@ fi
 
 # minimal stop handler for the install/update phase: bash as PID 1 would
 # otherwise ignore SIGTERM entirely; replaced by stop_server once the
-# server is about to run
-trap 'exit 143' TERM INT
+# server is about to run. A staged config copy must not survive the signal,
+# it may contain a webhook URL
+STAGED_CONFIG=""
+trap '[ -z "${STAGED_CONFIG}" ] || rm -f "${STAGED_CONFIG}"; exit 143' TERM INT
 
 parse_sub_instance_keys
 assert_valid_sub_instance_ports
@@ -350,7 +410,14 @@ cd "${ARK_SERVER_VOLUME}"
 # export the container environment for cron jobs (minus shell bookkeeping):
 # the bundled crontab loads it via BASH_ENV so that arkmanager and its
 # bash-based config files see the same variables as the server process
-export -p | grep -Ev '^declare -x (PWD|OLDPWD|SHLVL)($|=)' > "${ARK_SERVER_VOLUME}/environment"
+#
+# the dump holds the admin password and the Discord webhook URL, so it must
+# never exist world-readable, not even for the duration of the write. Removing
+# it first forces a fresh inode, otherwise the redirect would truncate a file
+# an older image version left at 644 and keep that mode; the chmod below is
+# the fallback for a file that could not be removed
+rm -f "${ARK_SERVER_VOLUME}/environment"
+(umask 077 && export -p | grep -Ev '^declare -x (PWD|OLDPWD|SHLVL)($|=)' > "${ARK_SERVER_VOLUME}/environment")
 chmod 600 "${ARK_SERVER_VOLUME}/environment" || echo "Failed to restrict permissions on ${ARK_SERVER_VOLUME}/environment, continuing startup..."
 
 echo "Setting up folder and file structure..."
@@ -361,6 +428,8 @@ copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkma
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
 
 add_cluster_to_arkmanager_cfg
+add_discord_to_arkmanager_cfg
+warn_on_hardcoded_discord_webhook
 remake_sub_instances_cfg
 
 # multi-instance needs per-instance autorestart files: the historic template

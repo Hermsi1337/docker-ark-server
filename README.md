@@ -138,9 +138,38 @@ Basic configuration is done with environment variables:
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
 | SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
+| DISCORD_WEBHOOK_URL | `empty` | Discord webhook to notify on start, stop, crash and restart, see [Discord notifications](#discord-notifications) |
 | CLUSTER_ID | `empty` | Setting a cluster id enables cluster mode (item/character transfer) and requires a volume mounted at `/cluster`, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | SUB_INSTANCE_KEYS | `empty` | Additional map instances to run in this container, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
+
+### Discord notifications
+
+arkmanager can post to a Discord webhook when the server starts, stops,
+crashes or gets restarted. Create a webhook in your Discord channel settings
+(Integrations, Webhooks) and put its URL into your `.env` file, like every
+other variable:
+
+```dotenv
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/<id>/<token>
+```
+
+Leave it empty (the default) and nothing is sent, exactly as before. To change
+the wording of the messages, edit the `notifyMsg*` settings in
+`/app/arkmanager/arkmanager.cfg`.
+
+Treat the URL as a secret, anyone who has it can post into your channel. It is
+also written to `/app/environment` (mode 600) so the cron jobs see it, which
+means it sits inside the server volume: strip it before you attach a volume
+tarball to a bug report.
+
+This works on existing volumes too. The startup appends the setting to an
+`arkmanager.cfg` that an older image version copied there, your own changes to
+that file stay untouched. If you had set `discordWebhookURL` by hand, either
+there or in an instance config under `/app/arkmanager/instances`, you get a
+warning at startup: that hardcoded URL keeps receiving notifications even when
+`DISCORD_WEBHOOK_URL` is empty, so remove it if you want the variable to be in
+charge.
 
 ### Graceful shutdown
 

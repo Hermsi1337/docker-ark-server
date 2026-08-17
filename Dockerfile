@@ -26,6 +26,7 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             PRE_UPDATE_BACKUP="true" \
             WARN_ON_STOP="true" \
             SKIP_DISK_CHECK="false" \
+            DISCORD_WEBHOOK_URL="" \
             CLUSTER_ID="" \
             SUB_INSTANCE_KEYS="" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
