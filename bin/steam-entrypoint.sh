@@ -434,6 +434,14 @@ function add_always_restart_on_crash_to_arkmanager_cfg() {
 [ "${ALWAYS_RESTART_ON_CRASH}" != "true" ] || arkAlwaysRestartOnCrash=true'
 }
 
+# see add_backup_retention_to_arkmanager_cfg
+# shellcheck disable=SC2016
+function add_warn_minutes_to_arkmanager_cfg() {
+  add_block_to_arkmanager_cfg 'warn countdown settings' '|| arkwarnminutes=' \
+'# Warn countdown for the --warn flag (see README)
+[ -z "${UPDATE_WARN_MINUTES}" ] || arkwarnminutes="${UPDATE_WARN_MINUTES}"'
+}
+
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
 # variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
 # arkmanager instance name - restrict keys to a safe charset and fail loudly
@@ -744,6 +752,7 @@ add_discord_to_arkmanager_cfg
 warn_on_hardcoded_discord_webhook
 add_backup_retention_to_arkmanager_cfg
 add_always_restart_on_crash_to_arkmanager_cfg
+add_warn_minutes_to_arkmanager_cfg
 warn_on_overridden_backup_budget
 remake_sub_instances_cfg
 
