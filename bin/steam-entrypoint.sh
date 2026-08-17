@@ -92,28 +92,99 @@ function ini_file_for_instance() {
   printf '%s' "${!var_name}"
 }
 
+function assert_ini_source_usable() {
+  local source_file="${1}"
+  local instance="${2}"
+  local complaint="ERROR: instance ${instance} is configured to use '${source_file}', but"
+
+  if [[ ! -e "${source_file}" ]]; then
+    echo "${complaint} nothing exists at that path."
+    echo "       That path is the one inside the container, not the one on your host."
+    exit 1
+  fi
+
+  if [[ -d "${source_file}" ]]; then
+    echo "${complaint} that is a directory."
+    echo "       Docker creates an empty directory when the host side of a bind mount is missing,"
+    echo "       so check the host path of your mount."
+    exit 1
+  fi
+
+  if [[ ! -f "${source_file}" ]]; then
+    echo "${complaint} that is not a regular file."
+    exit 1
+  fi
+
+  if [[ ! -r "${source_file}" ]]; then
+    echo "${complaint} $(id -un) may not read it."
+    echo "       Fix the file permissions, or set PUID/PGID to match its owner."
+    exit 1
+  fi
+}
+
+function assert_ini_files_are_usable() {
+  local instance var_name source_file claimed_file claimed_by
+
+  for var_name in ARK_GAME_USER_SETTINGS_INI_FILE ARK_GAME_INI_FILE; do
+    claimed_file=""
+    claimed_by=""
+
+    for instance in "${INSTANCES[@]}"; do
+      source_file="$(ini_file_for_instance "${instance}" "${var_name}")"
+      [[ -n "${source_file}" ]] || continue
+
+      assert_ini_source_usable "${source_file}" "${instance}"
+
+      if [[ -n "${claimed_file}" ]] && [[ "${claimed_file}" != "${source_file}" ]]; then
+        echo "ERROR: ${claimed_by} and ${instance} name different files for ${var_name}:"
+        echo "       '${claimed_file}' vs '${source_file}'."
+        echo "       All instances of a container share one config directory, so one of them would"
+        echo "       overwrite the config of the other. Point them at the same file."
+        exit 1
+      fi
+
+      claimed_file="${source_file}"
+      claimed_by="${instance}"
+    done
+  done
+}
+
 function apply_ini_file() {
   local source_file="${1}"
   local destination="${2}"
   local instance="${3}"
+  local stamp backup
+  local -i counter=1
 
   [[ -n "${source_file}" ]] || return 0
 
-  if [[ ! -f "${source_file}" ]]; then
-    echo "ERROR: instance ${instance} is configured to use '${source_file}', but that file does not exist."
-    echo "       Mount it into the container, or unset the variable to keep the config in the server volume."
-    exit 1
-  fi
-
-  # nothing to do if the config already matches - this also keeps an existing
-  # .bak from being overwritten with an identical copy on every restart
   if cmp -s "${source_file}" "${destination}"; then
     return 0
   fi
 
   mkdir -p "$(dirname "${destination}")"
-  [[ ! -f "${destination}" ]] || cp -a "${destination}" "${destination}.bak"
-  cp "${source_file}" "${destination}"
+
+  if [[ -f "${destination}" ]]; then
+    stamp="$(date +%s)"
+    backup="${destination}.bak.${stamp}"
+    while [[ -e "${backup}" ]]; do
+      backup="${destination}.bak.${stamp}-${counter}"
+      counter+=1
+    done
+    # plain cp, not cp -a: if the destination is a symlink, -a would archive a
+    # second link to the very file the copy below overwrites
+    cp "${destination}" "${backup}"
+    echo "...kept the previous ${destination} as ${backup}"
+    [[ -w "${destination}" ]] || chmod u+w "${destination}"
+  fi
+
+  # redirection, not cp: writing through a symlinked destination is what we
+  # want, and whether cp does that or replaces the link differs between GNU
+  # coreutils and busybox
+  cat "${source_file}" > "${destination}"
+  # the source mode is not the server's business - a read-only mount would
+  # leave ARK unable to write its config back
+  chmod 644 "${destination}"
   echo "...applied ${source_file} to ${destination} for instance ${instance}"
 }
 
@@ -476,8 +547,15 @@ function get_all_mod_ids() {
 # regular files by accident (e.g. via SFTP upload) - in that case adopt the
 # uploaded content as the real config and re-create the symlink, instead of
 # dying on 'ln: File exists'.
+# relative on purpose: it doubles as the target of the volume root symlinks,
+# which have to keep working when the volume is mounted somewhere else
+function config_dir() {
+  printf '%s' "./server/ShooterGame/Saved/Config/LinuxServer"
+}
+
 function heal_config_symlinks() {
-  local CONFIG_DIR="./server/ShooterGame/Saved/Config/LinuxServer"
+  local CONFIG_DIR
+  CONFIG_DIR="$(config_dir)"
   local INI_FILE INI_LINK
 
   for INI_FILE in Game.ini GameUserSettings.ini; do
@@ -527,6 +605,18 @@ parse_sub_instance_keys
 assert_valid_sub_instance_ports
 assert_valid_max_backup_size
 assert_valid_always_restart_on_crash
+
+# run exactly the instances this image manages: main plus the generated sub
+# instances - never arbitrary *.cfg files a user may keep in instances/
+INSTANCES=(main)
+for KEY in "${SUB_KEYS[@]}"; do
+  INSTANCES+=("sub.${KEY}")
+done
+
+# validate the declarative config paths here and not next to the copy further
+# down: on a fresh volume the install downloads ~25GB, and a container that
+# restarts on failure would repeat that on every cycle just to hit the same typo
+assert_ini_files_are_usable
 
 args=("$@")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
@@ -667,17 +757,11 @@ trap stop_server TERM INT
 rm -f "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".*.pid \
       "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".autorestart*
 
-# start exactly the instances this image manages: main plus the generated
-# sub instances - never arbitrary *.cfg files a user may keep in instances/
-INSTANCES=(main)
-for KEY in "${SUB_KEYS[@]}"; do
-  INSTANCES+=("sub.${KEY}")
-done
-
 # arkmanager only copies arkGameUserSettingsIniFile/arkGameIniFile over the
 # save dir config in its 'start' path, and we run 'run' to stay PID 1 - so do
 # it here. All instances of a container share one config directory, therefore
 # every copy has to be finished before the first server process reads it.
+CONFIG_DIR="$(config_dir)"
 for INSTANCE in "${INSTANCES[@]}"; do
   apply_ini_file "$(ini_file_for_instance "${INSTANCE}" ARK_GAME_USER_SETTINGS_INI_FILE)" \
     "${CONFIG_DIR}/GameUserSettings.ini" "${INSTANCE}"

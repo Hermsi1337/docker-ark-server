@@ -129,7 +129,7 @@ Basic configuration is done with environment variables:
 | ENABLE_CROSSPLAY | false | Enable crossplay (starts the server with `-crossplay`). When enabled, BattlEye should be disabled as it likes to disconnect Epic players |
 | DISABLE_BATTLEYE | false | Disable BattlEye protection (starts the server with `-NoBattlEye`) |
 | ARK_EXTRA_OPTS | `empty` | Additional ARK command line options, space separated (e.g. `ARK_EXTRA_OPTS=-ForceAllowCaveFlyers -PreventHibernation`). Each option must be of the form `-Flag` or `-Name=Value`; spaces inside an option are not supported |
-| ARK_GAME_INI_FILE | `empty` | Path to a `Game.ini` inside the container that is copied over the server config on every start, see [Mount your own `Game.ini` / `GameUserSettings.ini`](#mount-your-own-gameini--gameusersettingsini) |
+| ARK_GAME_INI_FILE | `empty` | Path to a `Game.ini` inside the container that is copied over the server config on every container start, see [Mount your own `Game.ini` / `GameUserSettings.ini`](#mount-your-own-gameini--gameusersettingsini) |
 | ARK_GAME_USER_SETTINGS_INI_FILE | `empty` | Same for `GameUserSettings.ini` |
 | BETA | `empty` | Opt into a Steam beta branch if necessary (e.g. `BETA=preaquatica`) |
 | BETA_ACCESSCODE | `empty` | Access code for the chosen beta branch, if it requires one |
@@ -289,9 +289,11 @@ previous one as `.bak`) and re-creates the symlink.
 
 #### Where the INI defaults come from
 
-This image ships no `Game.ini` or `GameUserSettings.ini`, and it never writes
-into them. Both files are created by the ARK dedicated server itself the first
-time it starts, filled with Wildcard's stock defaults (`AllowThirdPersonPlayer`,
+This image ships no `Game.ini` or `GameUserSettings.ini`, and unless you opt into
+[your own INI files](#mount-your-own-gameini--gameusersettingsini) it never
+writes into them either. Both files are created by the ARK dedicated server
+itself the first time it starts, filled with Wildcard's stock defaults
+(`AllowThirdPersonPlayer`,
 `ServerCrosshair`, the whole `[ServerSettings]` block, and so on). Everything you
 find in a fresh `GameUserSettings.ini` is a vanilla game default, not a
 requirement of this container — none of those keys are needed to start the
@@ -316,8 +318,8 @@ If you would rather keep your config in version control than edit it inside the
 volume, point `ARK_GAME_INI_FILE` and/or `ARK_GAME_USER_SETTINGS_INI_FILE` at a
 file inside the container. Both are unset by default, and with them unset
 nothing changes. When set, the entrypoint copies the named file over the config
-in the save directory before any server process starts, so every start begins
-from your file no matter what ARK wrote on the last shutdown.
+in the save directory before any server process starts, so every **container**
+start begins from your file no matter what ARK wrote on the last shutdown.
 
 ```yaml
 services:
@@ -329,22 +331,49 @@ services:
       ARK_GAME_USER_SETTINGS_INI_FILE: /config/GameUserSettings.ini
 ```
 
-The trade-off is the point of the feature: your file wins over everything else.
-Settings an admin changes in game, and everything the server writes back into
-the INI on shutdown, are gone the next time the container starts. Whatever gets
-replaced is kept next to it as `GameUserSettings.ini.bak` (only when it really
-differs, so a restart with an unchanged file leaves the backup alone).
+**Mount a complete INI file, not a snippet.** ARK treats a nearly empty config
+as one to regenerate: a file with only a `[ServerSettings]` header and two keys
+is rewritten from the game's own defaults within seconds of startup, and your
+values are gone without a word in the log. That looks exactly like this feature
+being broken, but the copy did happen. Let the server run once, copy
+`<your-volume>/GameUserSettings.ini` out, edit that file and mount it back.
 
-If a named file does not exist, the container stops with an error instead of
-quietly starting on a stale config. So a typo or a forgotten mount fails
-immediately.
+The trade-off is the point of the feature: your file replaces whatever is in the
+save directory. Settings an admin changes in game, and everything the server
+writes back into the INI on shutdown, are gone the next time the container
+starts.
+
+Two limits worth knowing before you rely on it:
+
+* **The command line still wins over your file.** arkmanager turns `ark_*` /
+  `arkopt_*` / `arkflag_*` into ARK command line arguments, and those beat the
+  INI. `MaxPlayers`, `SessionName`, `ServerAdminPassword` and friends in a
+  mounted file are silently ignored until you comment out the matching `ark_*`
+  line, see [Where the INI defaults come
+  from](#where-the-ini-defaults-come-from).
+* **It is applied on container start, not on every server start.** An arkmanager
+  auto restart after a crash, and the restart of a cron
+  `arkmanager update @all --warn`, both bring the server back on the config ARK
+  wrote. `docker restart` re-applies your file, an in-place restart does not.
+
+Whatever gets replaced is kept next to it as
+`GameUserSettings.ini.bak.<timestamp>`, and existing archives are never
+overwritten. A start that changes nothing writes no archive at all. Nothing
+prunes them either, so a container that restarts a lot collects one file per
+start in `<your-volume>/server/ShooterGame/Saved/Config/LinuxServer`. That is on
+purpose, we are not going to delete a config we just told you we saved. They are
+a few KB each, clean out the ones you do not need.
+
+If a named file cannot be used, the container stops with an error that says what
+was found (missing, a directory because the host side of your bind mount does
+not exist, or not readable) instead of quietly starting on a stale config. That
+check runs before the ~25GB install, so a typo does not cost you a download.
 
 Sub instances inherit the main value and can name their own file with
-`SUB_<KEY>_ARK_GAME_INI_FILE` / `SUB_<KEY>_ARK_GAME_USER_SETTINGS_INI_FILE`.
-Careful with that: all instances of one container share a single config
-directory (an ARK limitation, not ours), so if two instances name different
-files, the one listed last in `SUB_INSTANCE_KEYS` is what ends up on disk for
-everybody.
+`SUB_<KEY>_ARK_GAME_INI_FILE` / `SUB_<KEY>_ARK_GAME_USER_SETTINGS_INI_FILE`. All
+instances of one container share a single config directory though (an ARK
+limitation, not ours), so pointing two of them at different files is refused on
+start rather than letting one silently destroy the config of the other.
 
 The variable names mirror arkmanager's `arkGameIniFile` and
 `arkGameUserSettingsIniFile`. Setting those in the arkmanager config does
@@ -712,10 +741,13 @@ docker start ark-server
 
 Or declare the config instead of editing it: mount your INI file and set
 `ARK_GAME_INI_FILE` / `ARK_GAME_USER_SETTINGS_INI_FILE`, then it is applied on
-every start, see
+every container start, see
 [Mount your own INI files](#mount-your-own-gameini--gameusersettingsini). That
-fits a container much better, at the price that the mounted file wins over
-anything the game or an in-game admin writes at runtime.
+fits a container much better, at the price that the mounted file replaces
+anything the game or an in-game admin wrote at runtime. Read the caveats in that
+section: the file has to be a complete INI or ARK regenerates it, the command
+line still beats your INI values, and an in-place restart does not re-apply the
+file.
 
 Also note that settings supplied on the command line (via the environment
 variables / arkmanager) override the corresponding INI values — see
