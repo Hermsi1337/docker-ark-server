@@ -15,8 +15,8 @@ ARKMANAGER="$(command -v arkmanager)"
 ARK_TOOLS_CONFIG_DIR="${ARK_TOOLS_DIR:-/etc/arkmanager}"
 RUNNING_INSTANCES_FILE="${ARK_SERVER_VOLUME}/running-instances"
 UPDATE_GRACE_MARKER="${ARK_SERVER_VOLUME}/.healthcheck-update-grace"
-STATUS_TIMEOUT="10s"
-STATUS_KILL_AFTER="5s"
+STATUS_TIMEOUT_SECONDS="10"
+STATUS_KILL_AFTER_SECONDS="5"
 
 UPDATE_GRACE_MINUTES="${HEALTHCHECK_UPDATE_GRACE_MINUTES:-30}"
 if [[ ! "${UPDATE_GRACE_MINUTES}" =~ ^[0-9]+$ ]]; then
@@ -71,13 +71,38 @@ function within_update_grace() {
   (( NOW - SINCE <= UPDATE_GRACE_MINUTES * 60 ))
 }
 
+# arkmanager's status forks lsof and perl, and past the line we read it calls
+# api.ipify.org and the Steam API without a timeout. 'timeout' would signal the
+# command but not reliably its children, which leaves one set of them behind per
+# probe, so the call runs as its own process group ('set -m') and the watchdog
+# signals the whole group. The pipe into grep usually ends arkmanager before it
+# reaches the http calls, but that is an optimization, not the guarantee.
 function instance_is_running() {
-  # the pipe usually ends arkmanager right after the line below, but that is an
-  # optimization, not a guarantee: further down it calls api.ipify.org and the
-  # Steam API without a timeout, so bound the whole thing from the outside
-  timeout -k "${STATUS_KILL_AFTER}" "${STATUS_TIMEOUT}" \
-    "${ARKMANAGER}" status "@${1}" </dev/null 2>/dev/null |
-    grep -qE 'Server running:.*Yes'
+  local STATUS_PID WATCHDOG_PID RESULT
+
+  set -m
+  { "${ARKMANAGER}" status "@${1}" </dev/null 2>/dev/null | grep -qE 'Server running:.*Yes'; } &
+  STATUS_PID=$!
+  {
+    sleep "${STATUS_TIMEOUT_SECONDS}"
+    kill -TERM -- "-${STATUS_PID}" 2>/dev/null
+    sleep "${STATUS_KILL_AFTER_SECONDS}"
+    kill -KILL -- "-${STATUS_PID}" 2>/dev/null
+  } &
+  WATCHDOG_PID=$!
+  set +m
+
+  wait "${STATUS_PID}" 2>/dev/null
+  RESULT=$?
+
+  # the pipeline ending does not mean arkmanager is gone: the group signal that
+  # ended it can be ignored by the command itself, and on a match grep leaves
+  # while arkmanager still runs. Sweep the group before calling the watchdog off
+  kill -KILL -- "-${STATUS_PID}" 2>/dev/null
+  kill -KILL -- "-${WATCHDOG_PID}" 2>/dev/null
+  wait "${WATCHDOG_PID}" 2>/dev/null
+
+  return "${RESULT}"
 }
 
 # 'main' is always the first entry, so an empty or half written file (out of

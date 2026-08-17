@@ -144,7 +144,12 @@ downstream compose files and scripts.
   instead of `unhealthy`. Reporting healthy there would unblock
   `depends_on: condition: service_healthy` and Swarm rollouts before the server
   exists. It is also judged per container, not per instance: one dead map must
-  not restart the container serving the other two.
+  not restart the container serving the other two. And a probe that gives up on
+  a hung `arkmanager status` has to leave nothing running: it goes off every
+  minute for the life of the container, so one surviving child per instance and
+  probe piles up into hundreds an hour. That is why the call runs as its own
+  process group and the group is signalled, instead of `timeout` alone, which
+  signals the command but not reliably what the command forked.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 - **`bin/steam-entrypoint.sh` is sourceable.** Everything above the
