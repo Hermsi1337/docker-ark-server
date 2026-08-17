@@ -143,6 +143,9 @@ Basic configuration is done with environment variables:
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
 | SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
 | DISCORD_WEBHOOK_URL | `empty` | Discord webhook to notify on start, stop, crash and restart, see [Discord notifications](#discord-notifications) |
+| DISABLE_HEALTHCHECK | false | Set to `true` to make the [health check](#health-check) always report healthy, for UIs that do not expose `--no-healthcheck` |
+| HEALTHCHECK_REQUIRE_ALL_INSTANCES | false | Report unhealthy as soon as one instance is down, instead of only when all of them are, see [health check](#health-check) |
+| HEALTHCHECK_UPDATE_GRACE_MINUTES | 30 | How long stopped instances are excused while arkmanager holds its update lock |
 | CLUSTER_ID | `empty` | Setting a cluster id enables cluster mode (item/character transfer) and requires a volume mounted at `/cluster`, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | SUB_INSTANCE_KEYS | `empty` | Additional map instances to run in this container, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
@@ -253,6 +256,118 @@ value as "on", so this image only ever forwards an exact `true`, and the
 container refuses to start on anything else rather than let `True` or `yes` look
 accepted and do nothing.
 
+### Health check
+
+The image ships a `HEALTHCHECK`, so `docker ps` reports `starting`, `healthy` or
+`unhealthy` and compose can gate other services on it with
+`depends_on: condition: service_healthy`. It asks `arkmanager status` about every
+instance this container manages (`main` plus one `sub.<KEY>` per entry in
+`SUB_INSTANCE_KEYS`):
+
+* **healthy** as soon as at least one instance has a running server process
+* **unhealthy** when none of them has
+* **failing** (so `starting`, see below) while the container is still installing,
+  updating or has not launched the servers yet
+
+**Healthy is not "ready for players".** It means the install is done and a server
+process is up, and loading the map takes minutes on top of that. On a test run
+the container went healthy about 10 minutes into a fresh install while the log
+had not printed `Server is up` yet, and on an existing install it went healthy
+within seconds of the container start with the map taking another 85 seconds. So
+`depends_on: condition: service_healthy` can start a dependent service minutes
+before the first player can connect. Anything that needs a reachable server
+should retry instead of trusting the gate.
+
+Defaults baked into the image:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--interval` | `1m` | Time between two checks |
+| `--timeout` | `45s` | A check that takes longer counts as failed. Each instance is asked with a 10s timeout of its own, so raise this if you run more than four maps in one container |
+| `--start-period` | `6h` | Failures in this window keep the container `starting` instead of turning it `unhealthy` |
+| `--retries` | `5` | Consecutive failures before the container is marked `unhealthy` |
+
+So the servers have to be gone for about five minutes before the container turns
+unhealthy. That is on purpose: arkmanager restarts a crashed server on its own,
+and a restart plus map load can easily take a minute or two.
+
+Override the timings per container (compose):
+
+```yaml
+services:
+  server:
+    healthcheck:
+      interval: 1m
+      timeout: 45s
+      start_period: 6h
+      retries: 5
+```
+
+With plain `docker run` use `--health-interval=1m --health-timeout=45s
+--health-start-period=6h --health-retries=5`. To switch the check off, set
+`DISABLE_HEALTHCHECK=true` (works everywhere, including NAS and Portainer UIs
+that do not expose the docker flags), or use `healthcheck: disable: true` in
+compose or `--no-healthcheck` with `docker run`.
+
+**Why the start period is six hours.** The first start installs roughly 25GB,
+which is 20 minutes on a fast line and half a day on a slow one. The check fails
+during that time, on purpose, so nothing treats a downloading container as ready.
+Docker keeps it in `starting` for the whole start period, and those failures do
+not count towards `--retries`. The first success ends the start period early, so
+from the moment the servers are up a real outage still shows up after the usual
+five minutes. If your line needs longer than six hours, raise `start_period`.
+
+**Cron updates.** While arkmanager holds its update lock, stopped instances are
+excused for at most `HEALTHCHECK_UPDATE_GRACE_MINUTES` (default 30, counted from
+the moment the check actually starts excusing something, not from the start of
+the warning countdown). After that the container reports unhealthy even with the
+lock held, so a server that dies during the nightly update window is not hidden
+until morning.
+
+**One map down out of three.** By default the container is judged as a whole, so
+the two healthy maps keep it healthy and the dead one only shows up in the health
+log. Restarting the container would cut off the maps that are fine, and an
+instance that died while loading (bad map mod, for example) never comes back on
+its own unless you set `ALWAYS_RESTART_ON_CRASH`, so it would restart forever. Set
+`HEALTHCHECK_REQUIRE_ALL_INSTANCES=true` if you would rather have the container
+go unhealthy as soon as one instance is missing. Note that this also applies to
+instances you stop by hand: with the default, `arkmanager stop @sub.Fjordur`
+keeps the container healthy, in strict mode it turns unhealthy.
+
+**`ALWAYS_RESTART_ON_CRASH` makes healthy mean less.** With it on, arkmanager
+relaunches a crashed instance in place every five seconds, so a crash looping
+server almost always has a live process and the container keeps reporting
+healthy. That is the container doing what you asked for, but the health status
+is then not the thing that will tell you something is wrong, watch the logs.
+See [Crash restarts](#crash-restarts).
+
+**No port probing.** arkmanager's run loop already watches the game port and
+restarts an instance that stopped listening for 60 seconds. Failing the health
+check on the same signal would report unhealthy exactly while that recovery is
+running.
+
+#### Kubernetes
+
+Kubernetes ignores the image `HEALTHCHECK` completely, you have to write the
+probes yourself. The script is the same:
+
+```yaml
+        startupProbe:
+          exec:
+            command: ["/healthcheck.sh"]
+          periodSeconds: 60
+          failureThreshold: 360   # 6 hours for the initial download
+        livenessProbe:
+          exec:
+            command: ["/healthcheck.sh"]
+          periodSeconds: 60
+          failureThreshold: 5
+          timeoutSeconds: 45
+```
+
+The startup probe is what replaces `--start-period`. Without it the liveness
+probe kills the pod long before the download is done.
+
 ### Data layout
 
 Everything the server needs lives in the volume mounted at `/app`
@@ -266,6 +381,8 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/staging` | Staging directory arkmanager downloads updates into, see [staged updates](#staged-updates) |
 | `/app/crontab` | Cron definitions loaded at container start |
 | `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
+| `/app/running-instances` | Auto-generated: the instances the [health check](#health-check) watches. Written when the servers are launched, dropped at the next container start |
+| `/app/.healthcheck-update-grace` | Auto-generated: bookkeeping for the health check's update exemption |
 | `/app/arkmanager` | Persisted arkmanager configuration (global + instance). `instances/sub.*.cfg` are auto-regenerated on every start |
 | `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files (dangling until the server has written them once) |
 
@@ -604,6 +721,10 @@ The bundled [graceful shutdown](#graceful-shutdown) warns, saves and stops
 target `@all` — especially for updates: `arkmanager update @all --warn`
 stops and restarts every instance, while an update of a single instance
 would swap the shared server binaries underneath the still-running others.
+
+Stopping instances by hand shows up in the [health check](#health-check): the
+container stays healthy as long as one instance is running, and reports
+unhealthy about five minutes after the last one is gone.
 
 ### Example: 3 maps in 1 container
 
