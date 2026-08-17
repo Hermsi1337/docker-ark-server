@@ -39,7 +39,9 @@ function may_update() {
   ${ARKMANAGER} update @main "${UPDATE_ARGS[@]}" "${BETA_ARGS[@]}"
 }
 
-# shellcheck disable=SC2329  # invoked indirectly via 'trap stop_server TERM INT'
+# invoked indirectly via 'trap stop_server TERM INT'; SC2317 is what shellcheck
+# 0.9.x reports for it (Ubuntu 24.04), SC2329 what 0.10.0 and newer report
+# shellcheck disable=SC2317,SC2329
 function stop_server() {
   # ignore further stop signals: a second TERM would re-enter this handler
   # and restart the whole broadcast/stop/backup sequence
@@ -287,7 +289,9 @@ if [ -n "${BETA}" ]; then
 fi
 echo "_______________________________________"
 
-ARKMANAGER="$(command -v arkmanager)"
+# without '|| true' set -e kills the script on a missing arkmanager and the
+# guard below never gets to report it
+ARKMANAGER="$(command -v arkmanager)" || true
 [[ -x "${ARKMANAGER}" ]] || (
   echo "Arkmanager is missing"
   exit 1

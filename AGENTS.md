@@ -42,7 +42,7 @@ downstream compose files and scripts.
 | `.github/workflows/deploy-preview.yml` | "Build PR Preview" — builds PRs, pushes `pr-<n>` for same-repo PRs |
 | `.github/workflows/update-arkmanager-pin.yml` | "Update arkmanager pin" — weekly bump PR for the `ARK_TOOLS_VERSION` default |
 | `.github/workflows/lint.yml` | "Lint" — shellcheck, yamllint and hadolint on PRs and `master` |
-| `.yamllint` / `.hadolint.yaml` | Linter rule config; every disabled rule carries the reason it is off |
+| `.yamllint` | yamllint rule config; every disabled rule carries the reason it is off |
 | `.github/dependabot.yml` | Weekly `github-actions` version updates |
 
 ## CI/CD
@@ -85,10 +85,18 @@ downstream compose files and scripts.
 - Kept separate from the publish workflows on purpose so a lint failure can
   never block a release. The publish workflows keep their own `bash -n`
   syntax check as the hard gate.
-- Suppressions are targeted, never blanket: a per-line
-  `# shellcheck disable=SCxxxx` or `# hadolint ignore=DLxxxx` with the reason
-  above it, or a rule switched off in `.yamllint` / `.hadolint.yaml` with a
-  comment explaining the call. If you add one, write down why.
+- shellcheck and yamllint versions are pinned in the workflow's `env:` block,
+  not taken from the runner image, so a runner roll cannot turn `master` red on
+  code nobody touched. Bump them by hand. hadolint's version rides the action
+  tag, which Dependabot bumps.
+- Suppressions are targeted, never repo wide: every hadolint ignore sits inline
+  on the instruction it applies to and every shellcheck disable on the function
+  it applies to, with the reason directly above. There is no `.hadolint.yaml`
+  on purpose, a repo wide `DL3064` ignore would kill the only check that would
+  catch a real credential baked into a layer later. If you add a suppression,
+  write down why, and make sure the reason is actually true.
+- `stop_server` carries both `SC2317` and `SC2329`. Same finding, shellcheck
+  renumbered it in 0.10.0, and contributors on Ubuntu 24.04 have 0.9.x.
 
 **Required repository secrets:**
 

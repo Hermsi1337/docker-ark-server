@@ -16,37 +16,48 @@ concurrency:
 permissions:
   contents: read
 
+# Tool versions are pinned here rather than taken from the runner image: this
+# workflow also runs on push to master, and a runner image roll must not be
+# able to turn master red on code nobody touched. Bump these deliberately.
+env:
+  SHELLCHECK_VERSION: v0.11.0
+  YAMLLINT_VERSION: 1.38.0
+
 jobs:
   shellcheck:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # shellcheck ships with the GitHub-hosted ubuntu runner image
       - name: Run shellcheck
-        run: shellcheck bin/*.sh deploy/steam-login.sh
+        run: |
+          docker run --rm -v "${PWD}:/mnt" -w /mnt \
+            "koalaman/shellcheck:${SHELLCHECK_VERSION}" \
+            bin/*.sh deploy/steam-login.sh
 
   yamllint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Install yamllint
-        run: pipx install yamllint
 
       - name: Run yamllint
-        run: yamllint .github/workflows/ deploy/docker-compose.yml
+        run: |
+          python3 -m venv "${RUNNER_TEMP}/yamllint"
+          "${RUNNER_TEMP}/yamllint/bin/pip" install --quiet \
+            "yamllint==${YAMLLINT_VERSION}"
+          "${RUNNER_TEMP}/yamllint/bin/yamllint" \
+            .github/workflows/ deploy/docker-compose.yml
 
   hadolint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # hadolint version comes from the action tag, which Dependabot bumps
       - name: Run hadolint
         uses: hadolint/hadolint-action@v3.4.0
         with:
           dockerfile: Dockerfile
-          config: .hadolint.yaml

@@ -1,10 +1,16 @@
 FROM        cm2network/steamcmd:root
 
+# the key has been MAINTAINER since the first published tag; lowercasing it to
+# the form hadolint wants would change docker inspect output on every tag
+# hadolint ignore=DL3048
 LABEL       MAINTAINER="https://github.com/Hermsi1337/"
 
 ARG         ARK_TOOLS_VERSION="v1.6.69"
 ARG         IMAGE_VERSION="dev"
 
+# the *_PASSWORD and STEAM_LOGIN defaults are placeholders and the documented
+# config surface of the image, not credentials baked into a layer
+# hadolint ignore=DL3064
 ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             SESSION_NAME="Dockerized ARK Server by github.com/hermsi1337" \
             SERVER_MAP="TheIsland" \
@@ -43,10 +49,11 @@ ENV         ARK_TOOLS_DIR="${ARK_SERVER_VOLUME}/arkmanager"
 # and ship an image without arkmanager
 SHELL       ["/bin/bash", "-o", "pipefail", "-c"]
 
-# --no-install-recommends is deliberately not used: the recommended packages
-# pull in runtime dependencies of the ARK server binary and dropping them
-# would only surface as a broken server at container start.
-# hadolint ignore=DL3015
+# --no-install-recommends is deliberately not used: curl recommends
+# ca-certificates, which the https fetch below needs, and cron recommends an
+# MTA. Versions are not pinned either, every publish rebuilds with no-cache on
+# a freshly pulled base so it ships current state on purpose.
+# hadolint ignore=DL3008,DL3015
 RUN         set -x && \
             apt-get update && \
             apt-get install -y  perl-modules \
@@ -60,7 +67,7 @@ RUN         set -x && \
                                 procps \
             && \
             opt=$([ "${ARK_TOOLS_VERSION#v}" != "${ARK_TOOLS_VERSION}" ] && echo -n "--tag" || echo -n "--commit") && \
-            curl -sL https://raw.githubusercontent.com/arkmanager/ark-server-tools/refs/heads/master/netinstall.sh | \
+            curl -fsSL https://raw.githubusercontent.com/arkmanager/ark-server-tools/refs/heads/master/netinstall.sh | \
             bash -s "${USER}" "${opt}=${ARK_TOOLS_VERSION}" && \
             ln -s /usr/local/bin/arkmanager /usr/bin/arkmanager && \
             install -d -o "${USER}" "${ARK_SERVER_VOLUME}" && \
