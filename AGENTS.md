@@ -36,6 +36,7 @@ downstream compose files and scripts.
 | `Dockerfile` | Image build; installs arkmanager via upstream `netinstall.sh` |
 | `bin/docker-entrypoint.sh` | Container entrypoint (root: setup, cron, drops to steam user) |
 | `bin/steam-entrypoint.sh` | Server bootstrap/run as the `steam` user |
+| `bin/healthcheck.sh` | Container `HEALTHCHECK` (root: drops to the steam user, checks every managed instance) |
 | `conf.d/` | Templates copied into the image (`arkmanager.cfg`, `arkmanager-user.cfg`, `crontab`) |
 | `deploy/` | Example `docker-compose.yml` + `example.env` for end users |
 | `tests/` | bats suite for the pure-bash parts of `bin/steam-entrypoint.sh` |

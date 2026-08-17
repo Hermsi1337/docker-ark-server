@@ -253,6 +253,59 @@ value as "on", so this image only ever forwards an exact `true`, and the
 container refuses to start on anything else rather than let `True` or `yes` look
 accepted and do nothing.
 
+### Health check
+
+The image ships a `HEALTHCHECK`, so `docker ps` reports `healthy` / `unhealthy`
+and Kubernetes or Swarm have something to build a probe on. It asks
+`arkmanager status` about every instance this container manages (`main` plus one
+`sub.<KEY>` per entry in `SUB_INSTANCE_KEYS`) and fails as soon as one of them
+has no running server process.
+
+Defaults baked into the image:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--interval` | `1m` | Time between two checks |
+| `--timeout` | `30s` | A check that takes longer counts as failed |
+| `--start-period` | `5m` | Failures during this window after container start are not counted |
+| `--retries` | `5` | Consecutive failures before the container is marked `unhealthy` |
+
+So an instance has to be gone for about five minutes before the container turns
+unhealthy. That is on purpose: arkmanager restarts a crashed server on its own,
+and a restart plus map load can easily take a minute or two.
+
+Override the timings per container (compose):
+
+```yaml
+services:
+  server:
+    healthcheck:
+      interval: 5m
+      timeout: 30s
+      start_period: 10m
+      retries: 3
+```
+
+With plain `docker run` use `--health-interval=5m --health-timeout=30s
+--health-start-period=10m --health-retries=3`. To switch the check off entirely,
+use `healthcheck: disable: true` in compose or `--no-healthcheck` with
+`docker run`.
+
+The first start is not covered by `--start-period` but by the check itself: the
+initial download is roughly 25GB, which is 20 minutes on a fast line and half a
+day on a slow one, so no fixed start period fits everyone. Instead the entrypoint
+writes `/app/running-instances` right before it launches the servers, and the
+check only demands a running process for the instances listed in that file.
+While the file is missing (install, mod downloads, `UPDATE_ON_START`) the
+container counts as healthy, and the same goes for the window in which arkmanager
+holds its update lock, e.g. during a cron update that stops the server for a
+while.
+
+The check does not probe the game port. arkmanager's run loop already watches
+that and restarts an instance that stopped listening for 60 seconds, so failing
+the health check on it would report unhealthy exactly while the recovery is
+running.
+
 ### Data layout
 
 Everything the server needs lives in the volume mounted at `/app`
@@ -266,6 +319,7 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/staging` | Staging directory arkmanager downloads updates into, see [staged updates](#staged-updates) |
 | `/app/crontab` | Cron definitions loaded at container start |
 | `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
+| `/app/running-instances` | Auto-generated: the instances the [health check](#health-check) watches. Missing while the container is still installing or updating |
 | `/app/arkmanager` | Persisted arkmanager configuration (global + instance). `instances/sub.*.cfg` are auto-regenerated on every start |
 | `/app/Game.ini`, `/app/GameUserSettings.ini` | Convenience symlinks to the real config files (dangling until the server has written them once) |
 

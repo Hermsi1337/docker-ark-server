@@ -88,5 +88,8 @@ EXPOSE      ${GAME_CLIENT_PORT}/udp ${UDP_SOCKET_PORT}/udp ${SERVER_LIST_PORT}/u
 VOLUME      ["${ARK_SERVER_VOLUME}"]
 WORKDIR     ${ARK_SERVER_VOLUME}
 
+HEALTHCHECK --interval=1m --timeout=30s --start-period=5m --retries=5 \
+            CMD ["/healthcheck.sh"]
+
 ENTRYPOINT  ["/docker-entrypoint.sh"]
 CMD         []
