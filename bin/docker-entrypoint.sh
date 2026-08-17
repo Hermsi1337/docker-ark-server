@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
-
-[[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
-
 CRON_BLOCK_BEGIN="# >>> docker-ark-server: generated cron jobs - do not edit, this block is rewritten on every start >>>"
 CRON_BLOCK_END="# <<< docker-ark-server: generated cron jobs <<<"
 CRON_FIELD_NAMES=("minute" "hour" "day-of-month" "month" "day-of-week")
@@ -220,6 +216,16 @@ function render_generated_cronjobs() {
     fi
   } > "${CRONTAB_FILE}"
 }
+
+# everything below is the startup sequence; sourcing this script (the test
+# suite does) only defines the functions above
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  return 0
+fi
+
+set -e
+
+[[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
 
 assert_valid_cron_configuration
 
