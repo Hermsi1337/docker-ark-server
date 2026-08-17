@@ -76,6 +76,167 @@ function copy_missing_file() {
   fi
 }
 
+function ini_file_for_instance() {
+  local instance="${1}"
+  local var_name="${2}"
+  local sub_var_name
+
+  if [[ "${instance}" == sub.* ]]; then
+    sub_var_name="SUB_${instance#sub.}_${var_name}"
+    if [[ -n "${!sub_var_name}" ]]; then
+      printf '%s' "${!sub_var_name}"
+      return
+    fi
+  fi
+
+  printf '%s' "${!var_name}"
+}
+
+function assert_ini_source_usable() {
+  local source_file="${1}"
+  local instance="${2}"
+  local complaint="ERROR: instance ${instance} is configured to use '${source_file}', but"
+
+  if [[ ! -e "${source_file}" ]]; then
+    echo "${complaint} nothing exists at that path."
+    echo "       That path is the one inside the container, not the one on your host."
+    exit 1
+  fi
+
+  if [[ -d "${source_file}" ]]; then
+    echo "${complaint} that is a directory."
+    echo "       Docker creates an empty directory when the host side of a bind mount is missing,"
+    echo "       so check the host path of your mount."
+    exit 1
+  fi
+
+  if [[ ! -f "${source_file}" ]]; then
+    echo "${complaint} that is not a regular file."
+    exit 1
+  fi
+
+  if [[ ! -r "${source_file}" ]]; then
+    echo "${complaint} $(id -un) may not read it."
+    echo "       Fix the file permissions, or set PUID/PGID to match its owner."
+    exit 1
+  fi
+
+  if [[ ! -s "${source_file}" ]]; then
+    echo "${complaint} it is empty."
+    echo "       An empty file would replace the whole config with nothing and the server would"
+    echo "       come up on vanilla defaults. If you created it to satisfy a bind mount, put a"
+    echo "       complete INI in it, or drop both the mount and the variable."
+    exit 1
+  fi
+}
+
+function assert_ini_files_are_usable() {
+  local instance var_name source_file claimed_file claimed_by
+  local settings_file="" game_file=""
+
+  for var_name in ARK_GAME_USER_SETTINGS_INI_FILE ARK_GAME_INI_FILE; do
+    claimed_file=""
+    claimed_by=""
+
+    for instance in "${INSTANCES[@]}"; do
+      source_file="$(ini_file_for_instance "${instance}" "${var_name}")"
+      [[ -n "${source_file}" ]] || continue
+
+      assert_ini_source_usable "${source_file}" "${instance}"
+
+      if [[ -n "${claimed_file}" ]] && [[ "${claimed_file}" != "${source_file}" ]]; then
+        echo "ERROR: ${claimed_by} and ${instance} name different files for ${var_name}:"
+        echo "       '${claimed_file}' vs '${source_file}'."
+        echo "       All instances of a container share one config directory, so one of them would"
+        echo "       overwrite the config of the other. Point them at the same file."
+        exit 1
+      fi
+
+      claimed_file="${source_file}"
+      claimed_by="${instance}"
+    done
+
+    if [[ "${var_name}" == ARK_GAME_INI_FILE ]]; then
+      game_file="${claimed_file}"
+    else
+      settings_file="${claimed_file}"
+    fi
+  done
+
+  if [[ -n "${game_file}" ]] && [[ "${game_file}" == "${settings_file}" ]]; then
+    echo "ERROR: ARK_GAME_INI_FILE and ARK_GAME_USER_SETTINGS_INI_FILE both name '${game_file}'."
+    echo "       Game.ini and GameUserSettings.ini hold different sections, so one of the two"
+    echo "       would end up with the wrong content. Point them at separate files."
+    exit 1
+  fi
+}
+
+function apply_ini_file() {
+  local source_file="${1}"
+  local destination="${2}"
+  local instance="${3}"
+  local stamp backup staged
+  local -i counter=1
+
+  [[ -n "${source_file}" ]] || return 0
+
+  # the paths were validated before the install, which can be a long time and a
+  # dropped network mount ago - a source that went away must not cost the live
+  # config
+  assert_ini_source_usable "${source_file}" "${instance}"
+
+  mkdir -p "$(dirname "${destination}")"
+
+  # a start killed between staging and the write leaves its staged copy behind,
+  # and the stop handler that is already installed at this point does not know
+  # about it - clear it here instead of growing the trap
+  rm -f "${destination}".staged.*
+
+  # a config left read-only by an older start would fail the write below, and
+  # ARK could not write its own config back either
+  if [[ -f "${destination}" ]] && [[ ! -w "${destination}" ]]; then
+    chmod 644 "${destination}"
+  fi
+
+  if cmp -s "${source_file}" "${destination}"; then
+    return 0
+  fi
+
+  # read the source out in full before anything is archived or truncated, so a
+  # source that disappears mid-copy cannot leave the live config half written
+  staged="${destination}.staged.$$"
+  if ! cat "${source_file}" > "${staged}"; then
+    rm -f "${staged}"
+    echo "ERROR: could not stage '${source_file}' next to ${destination} for instance ${instance}."
+    echo "       The live config was left untouched. Check that $(id -un) can write to"
+    echo "       $(dirname "${destination}")."
+    exit 1
+  fi
+
+  if [[ -f "${destination}" ]]; then
+    stamp="$(date +%s)"
+    backup="${destination}.bak.${stamp}"
+    while [[ -e "${backup}" ]]; do
+      backup="${destination}.bak.${stamp}-${counter}"
+      counter+=1
+    done
+    # plain cp, not cp -a: if the destination is a symlink, -a would archive a
+    # second link to the very file the copy below overwrites
+    cp "${destination}" "${backup}"
+    echo "...kept the previous ${destination} as ${backup}"
+  fi
+
+  # redirection, not cp: writing through a symlinked destination is what we
+  # want, and whether cp does that or replaces the link differs between GNU
+  # coreutils and busybox
+  cat "${staged}" > "${destination}"
+  rm -f "${staged}"
+  # the source mode is not the server's business - a read-only mount would
+  # leave ARK unable to write its config back
+  chmod 644 "${destination}"
+  echo "...applied ${source_file} to ${destination} for instance ${instance}"
+}
+
 function needs_install() {
   local SERVER_DIR="${ARK_SERVER_VOLUME}/server"
   local SERVER_EXEC="${SERVER_DIR}/ShooterGame/Binaries/Linux/ShooterGameServer"
@@ -430,13 +591,20 @@ function get_all_mod_ids() {
   [[ ${#collected[@]} -eq 0 ]] || printf '%s\n' "${collected[@]}" | sort -u
 }
 
+# relative on purpose: it doubles as the target of the volume root symlinks,
+# which have to keep working when the volume is mounted somewhere else
+function config_dir() {
+  printf '%s' "./server/ShooterGame/Saved/Config/LinuxServer"
+}
+
 # Game.ini and GameUserSettings.ini in the volume root are convenience
 # symlinks to the real config files. Users regularly replace them with
 # regular files by accident (e.g. via SFTP upload) - in that case adopt the
 # uploaded content as the real config and re-create the symlink, instead of
 # dying on 'ln: File exists'.
 function heal_config_symlinks() {
-  local CONFIG_DIR="./server/ShooterGame/Saved/Config/LinuxServer"
+  local CONFIG_DIR
+  CONFIG_DIR="$(config_dir)"
   local INI_FILE INI_LINK
 
   for INI_FILE in Game.ini GameUserSettings.ini; do
@@ -486,6 +654,18 @@ parse_sub_instance_keys
 assert_valid_sub_instance_ports
 assert_valid_max_backup_size
 assert_valid_always_restart_on_crash
+
+# run exactly the instances this image manages: main plus the generated sub
+# instances - never arbitrary *.cfg files a user may keep in instances/
+INSTANCES=(main)
+for KEY in "${SUB_KEYS[@]}"; do
+  INSTANCES+=("sub.${KEY}")
+done
+
+# validate the declarative config paths here and not next to the copy further
+# down: on a fresh volume the install downloads ~25GB, and a container that
+# restarts on failure would repeat that on every cycle just to hit the same typo
+assert_ini_files_are_usable
 
 args=("$@")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
@@ -626,11 +806,16 @@ trap stop_server TERM INT
 rm -f "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".*.pid \
       "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".autorestart*
 
-# start exactly the instances this image manages: main plus the generated
-# sub instances - never arbitrary *.cfg files a user may keep in instances/
-INSTANCES=(main)
-for KEY in "${SUB_KEYS[@]}"; do
-  INSTANCES+=("sub.${KEY}")
+# arkmanager only copies arkGameUserSettingsIniFile/arkGameIniFile over the
+# save dir config in its 'start' path, and we run 'run' to stay PID 1 - so do
+# it here. All instances of a container share one config directory, therefore
+# every copy has to be finished before the first server process reads it.
+CONFIG_DIR="$(config_dir)"
+for INSTANCE in "${INSTANCES[@]}"; do
+  apply_ini_file "$(ini_file_for_instance "${INSTANCE}" ARK_GAME_USER_SETTINGS_INI_FILE)" \
+    "${CONFIG_DIR}/GameUserSettings.ini" "${INSTANCE}"
+  apply_ini_file "$(ini_file_for_instance "${INSTANCE}" ARK_GAME_INI_FILE)" \
+    "${CONFIG_DIR}/Game.ini" "${INSTANCE}"
 done
 
 for INSTANCE in "${INSTANCES[@]}"; do
