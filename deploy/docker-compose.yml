@@ -57,6 +57,9 @@ services:
       # # Health check behaviour, see the README section "Health check"
       #- DISABLE_HEALTHCHECK=true
       #- HEALTHCHECK_REQUIRE_ALL_INSTANCES=true
+      # # Escape hatch for a broken ARK update, see the README section
+      # # "Pin the server to a Steam manifest"
+      #- TARGET_MANIFEST_ID=${TARGET_MANIFEST_ID}
       # # Cluster / multi-map settings, see the README section
       # # "Cluster and multi-map support" for all SUB_<KEY>_* variables
       #- CLUSTER_ID=MyCluster

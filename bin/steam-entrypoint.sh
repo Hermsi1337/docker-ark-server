@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
 function may_update() {
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    echo "Not updating: this server is pinned to manifest ${TARGET_MANIFEST_ID} (\$TARGET_MANIFEST_ID)."
+    return
+  fi
+
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
     [[ "${VALIDATE_ON_START}" != "true" ]] ||
       echo "WARNING: VALIDATE_ON_START has no effect because UPDATE_ON_START is not 'true' - skipping validation"
@@ -245,6 +250,12 @@ function needs_install() {
     return 0
   fi
 
+  if [[ -n "${TARGET_MANIFEST_ID}" ]] &&
+     [[ "$(cat "${MANIFEST_PIN_FILE}" 2>/dev/null)" != "${TARGET_MANIFEST_ID}" ]]; then
+    echo "Installed files were not pinned to manifest ${TARGET_MANIFEST_ID} ..."
+    return 0
+  fi
+
   # Backwards compatibility - but only trust version.txt if the server
   # executable actually exists, otherwise trigger a repair install
   local VERSION_FILE="${SERVER_DIR}/version.txt"
@@ -268,14 +279,30 @@ function needs_install() {
   return 1
 }
 
-function assert_free_disk_space() {
+function assert_free_disk_space_on() {
   # a fresh ARK install needs roughly 25GB (plus staging/backup headroom)
   local REQUIRED_MB="25000"
+  local TARGET="${1}"
   local AVAILABLE_MB
 
+  AVAILABLE_MB="$(df -Pm "${TARGET}" | awk 'NR==2 {print $4}')"
+  if [[ -n "${AVAILABLE_MB}" ]] && (( AVAILABLE_MB < REQUIRED_MB )); then
+    echo "ERROR: Not enough free disk space on ${TARGET}:"
+    echo "       ${AVAILABLE_MB}MB available, ~${REQUIRED_MB}MB required for the ARK server files."
+    echo "       Free up disk space, or set SKIP_DISK_CHECK=true to install anyway."
+    exit 1
+  fi
+}
+
+function assert_free_disk_space() {
   if [[ "${SKIP_DISK_CHECK}" == "true" ]]; then
     return
   fi
+
+  # steamcmd's download_depot ignores force_install_dir and always stages the
+  # full depot below its own home first, so a pinned install needs the space
+  # twice - and it needs it again for every re-pin, not just the first install
+  [[ -z "${TARGET_MANIFEST_ID}" ]] || assert_free_disk_space_on "${STEAM_HOME}"
 
   # repair installs already have most content on disk and steamcmd validate
   # only fetches what is missing - the full-size gate is for fresh installs.
@@ -285,13 +312,69 @@ function assert_free_disk_space() {
     return
   fi
 
-  AVAILABLE_MB="$(df -Pm "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}')"
-  if [[ -n "${AVAILABLE_MB}" ]] && (( AVAILABLE_MB < REQUIRED_MB )); then
-    echo "ERROR: Not enough free disk space on ${ARK_SERVER_VOLUME}:"
-    echo "       ${AVAILABLE_MB}MB available, ~${REQUIRED_MB}MB required for the ARK server files."
-    echo "       Free up disk space, or set SKIP_DISK_CHECK=true to install anyway."
+  assert_free_disk_space_on "${ARK_SERVER_VOLUME}"
+}
+
+function find_downloaded_depot() {
+  local -r APP_ID="${1}"
+  local -r DEPOT_ID="${2}"
+
+  # the depth limit keeps find out of the ~22GB of depot content it would
+  # otherwise walk through
+  find "${STEAM_HOME}" -maxdepth 6 -type d \
+    -path "*/steamapps/content/app_${APP_ID}/depot_${DEPOT_ID}" -print -quit 2>/dev/null
+}
+
+function install_depot_files() {
+  local -r DEPOT_DIR="${1}"
+
+  echo "...moving ${DEPOT_DIR} into ${ARK_SERVER_VOLUME}/server"
+  cp -a "${DEPOT_DIR}/." "${ARK_SERVER_VOLUME}/server/"
+  # steamcmd never cleans up its download directory, and leaving it behind
+  # would keep a second full copy of the server files on disk
+  rm -rf "${DEPOT_DIR}"
+}
+
+function install_pinned_manifest() {
+  local -r APP_ID="376030"
+  local -r CONTENT_DEPOT_ID="376031"
+  local -r REDIST_DEPOT_ID="1006"
+  local CONTENT_DIR REDIST_DIR
+
+  echo "Installing app ${APP_ID} pinned to manifest ${TARGET_MANIFEST_ID}..."
+  echo "arkmanager cannot pass a manifest to steamcmd, so this bypasses it and calls steamcmd directly."
+
+  # steamcmd reports success for downloads that never happened, so the depot
+  # directories below decide whether this worked, not the exit status
+  "${STEAM_HOME}/steamcmd/steamcmd.sh" \
+    +@NoPromptForPassword 1 \
+    +login "${STEAM_LOGIN:-anonymous}" \
+    +download_depot "${APP_ID}" "${REDIST_DEPOT_ID}" \
+    +download_depot "${APP_ID}" "${CONTENT_DEPOT_ID}" "${TARGET_MANIFEST_ID}" \
+    +quit || true
+
+  CONTENT_DIR="$(find_downloaded_depot "${APP_ID}" "${CONTENT_DEPOT_ID}")"
+  if [[ -z "${CONTENT_DIR}" ]]; then
+    echo "ERROR: steamcmd did not download depot ${CONTENT_DEPOT_ID} at manifest ${TARGET_MANIFEST_ID}."
+    echo "       Check its output above and verify the manifest id on"
+    echo "       https://steamdb.info/depot/${CONTENT_DEPOT_ID}/manifests/"
+    echo "       'Manifest not available' means this account cannot see that manifest - set"
+    echo "       STEAM_LOGIN to an account that owns ARK and mount a Steam session (see the README)."
     exit 1
   fi
+
+  # the ARK server binary loads steamclient.so from linux64/, which lives in
+  # the shared Steamworks redistributable depot rather than in the game depot
+  REDIST_DIR="$(find_downloaded_depot "${APP_ID}" "${REDIST_DEPOT_ID}")"
+  if [[ -n "${REDIST_DIR}" ]]; then
+    install_depot_files "${REDIST_DIR}"
+  else
+    echo "WARNING: depot ${REDIST_DEPOT_ID} (Steamworks redistributables) was not downloaded, continuing..."
+  fi
+
+  install_depot_files "${CONTENT_DIR}"
+
+  echo "${TARGET_MANIFEST_ID}" > "${MANIFEST_PIN_FILE}"
 }
 
 function add_cluster_to_arkmanager_cfg() {
@@ -682,6 +765,27 @@ done
 # restarts on failure would repeat that on every cycle just to hit the same typo
 assert_ini_files_are_usable
 
+MANIFEST_PIN_FILE="${ARK_SERVER_VOLUME}/server/.target_manifest_id"
+if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+  if [[ ! "${TARGET_MANIFEST_ID}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: TARGET_MANIFEST_ID='${TARGET_MANIFEST_ID}' must be a plain numeric Steam manifest id."
+    echo "       Look it up on https://steamdb.info/depot/376031/manifests/"
+    exit 1
+  fi
+
+  # arkmanager only ever updates to the newest build, and it starts an update
+  # on its own when arkAutoUpdateOnStart is true - the config binds that to
+  # UPDATE_ON_START, and cron jobs read the same exported environment
+  if [[ "${UPDATE_ON_START}" == "true" ]]; then
+    echo "WARNING: UPDATE_ON_START is ignored while TARGET_MANIFEST_ID pins this server to a manifest"
+  fi
+  UPDATE_ON_START="false"
+
+  if [[ -n "${BETA}" ]]; then
+    echo "WARNING: BETA has no effect while TARGET_MANIFEST_ID is set - a manifest id already identifies one build of one branch"
+  fi
+fi
+
 args=("$@")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
   args=('--arkopt,-crossplay' "${args[@]}")
@@ -706,6 +810,9 @@ echo "# RUNNING AS USER '${STEAM_USER}' - '$(id -u)'"
 echo "# ARGS: ${args[*]}"
 if [ -n "${BETA}" ]; then
   echo "# BETA: ${BETA}"
+fi
+if [ -n "${TARGET_MANIFEST_ID}" ]; then
+  echo "# TARGET_MANIFEST_ID: ${TARGET_MANIFEST_ID}"
 fi
 echo "_______________________________________"
 
@@ -758,6 +865,11 @@ fi
 
 heal_config_symlinks
 
+if [[ -z "${TARGET_MANIFEST_ID}" ]] && [[ -f "${MANIFEST_PIN_FILE}" ]]; then
+  echo "TARGET_MANIFEST_ID is no longer set, dropping the manifest pin - updates will move this server to the latest build again."
+  rm -f "${MANIFEST_PIN_FILE}"
+fi
+
 if needs_install; then
   echo "No game files found. Installing..."
 
@@ -771,7 +883,9 @@ if needs_install; then
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
-  if ! ${ARKMANAGER} install @main --verbose "${BETA_ARGS[@]}"; then
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    install_pinned_manifest
+  elif ! ${ARKMANAGER} install @main --verbose "${BETA_ARGS[@]}"; then
     echo "ERROR: Installation failed - check the steamcmd output above."
     echo "       Common causes: not enough disk space ($(df -Ph "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}') left on ${ARK_SERVER_VOLUME}), network hiccups."
     exit 1

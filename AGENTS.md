@@ -150,6 +150,14 @@ downstream compose files and scripts.
   probe piles up into hundreds an hour. That is why the call runs as its own
   process group and the group is signalled, instead of `timeout` alone, which
   signals the command but not reliably what the command forked.
+- **`TARGET_MANIFEST_ID` bypasses arkmanager on purpose.** arkmanager can only
+  ever update to the newest build (steamcmd's `app_update` takes no manifest
+  argument, and arkmanager has no `download_depot` support), so a pinned
+  install calls `steamcmd +download_depot` directly and copies the depot into
+  the server directory. It then has to keep arkmanager away from steamcmd: the
+  entrypoint forces `UPDATE_ON_START=false`, which `conf.d/arkmanager.cfg`
+  binds to `arkAutoUpdateOnStart`, and which cron jobs also read via
+  `BASH_ENV`. Do not fold this back into an `arkmanager install/update` call.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 - **`bin/steam-entrypoint.sh` is sourceable.** Everything above the

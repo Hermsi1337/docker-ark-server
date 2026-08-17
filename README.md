@@ -133,6 +133,7 @@ Basic configuration is done with environment variables:
 | ARK_GAME_USER_SETTINGS_INI_FILE | `empty` | Same for `GameUserSettings.ini` |
 | BETA | `empty` | Opt into a Steam beta branch if necessary (e.g. `BETA=preaquatica`) |
 | BETA_ACCESSCODE | `empty` | Access code for the chosen beta branch, if it requires one |
+| TARGET_MANIFEST_ID | `empty` | Pin the server files to one specific Steam manifest of depot `376031`, e.g. to roll back a broken update. Disables all automatic updates while set, see [Pin the server to a Steam manifest](#pin-the-server-to-a-steam-manifest-downgrade) |
 | STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)) |
 | ARK_SERVER_VOLUME | /app | Path inside the container where the server files are stored |
 | PUID | `empty` | Run the server with a custom UID, e.g. to match the owner of a bind mount on NAS systems. If the server volume's ownership does not match, it is adopted once via a recursive chown, which can take a while |
@@ -141,7 +142,7 @@ Basic configuration is done with environment variables:
 | UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always game client port +1) |
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
-| SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
+| SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before installing the server files |
 | DISCORD_WEBHOOK_URL | `empty` | Discord webhook to notify on start, stop, crash and restart, see [Discord notifications](#discord-notifications) |
 | DISABLE_HEALTHCHECK | false | Set to `true` to make the [health check](#health-check) always report healthy, for UIs that do not expose `--no-healthcheck` |
 | HEALTHCHECK_REQUIRE_ALL_INSTANCES | false | Report unhealthy as soon as one instance is down, instead of only when all of them are, see [health check](#health-check) |
@@ -655,6 +656,61 @@ and never overwritten. If your server volume was first created with an image
 older than timestamp `1656497302`, edit line 15 of
 `<your-volume>/arkmanager/arkmanager.cfg` and replace it with:
 `steamlogin="${STEAM_LOGIN}"`
+
+### Pin the server to a Steam manifest (downgrade)
+
+Sometimes Wildcard ships a broken build and the only way out is going back to
+the previous one. `TARGET_MANIFEST_ID` pins the server files to one exact build
+of ARK's content depot (`376031`):
+
+```yaml
+    environment:
+      TARGET_MANIFEST_ID: "6366771435093287465"
+```
+
+This is an escape hatch for broken updates, not an everyday setting. Leave it
+empty (the default) unless a specific build is actually broken for you, and
+remove it again once Wildcard has fixed things. A pinned server misses every
+later fix, and depending on the ARK version, clients may no longer be able to
+join it.
+
+**Finding a manifest id:** open
+[depot 376031 on SteamDB](https://steamdb.info/depot/376031/manifests/), find
+the build you want by date, and copy its manifest id (a long number). The
+`public` branch is the one a normal install uses.
+
+**What changes while a pin is set:**
+
+* `arkmanager` has no way to pass a manifest to `steamcmd`, so the install
+  bypasses arkmanager and calls `steamcmd +download_depot` directly.
+* `UPDATE_ON_START` is ignored and arkmanager's own update-before-start is
+  switched off, otherwise the next restart would pull the broken build straight
+  back in. The container log says so on every start.
+* `BETA` is ignored. A manifest id already identifies exactly one build of one
+  branch.
+* Mods are still installed and updated as usual.
+* An explicit `arkmanager update` (for example from one of the
+  [crontab](#add-cronjobs) examples) still updates. Comment those jobs out
+  while you are pinned.
+
+Change `TARGET_MANIFEST_ID` and restart to switch to a different build, or
+remove it to go back to normal updates. Switching from one pin to another
+copies the new build over the old one, it does not delete files the new build
+dropped. That is normally fine, but if a switched server misbehaves, back up
+`<your-volume>/server/ShooterGame/Saved`, delete `<your-volume>/server` and let
+it install again.
+
+**Steam login:** the current public manifests download fine with the default
+anonymous login. If `steamcmd` reports that the manifest is not available, that
+manifest is not reachable anonymously (this happens for manifests that only
+ever existed on a beta branch) and you need an account that owns ARK, see
+[Configure a Steam login session](#configure-a-steam-login-session).
+
+**Disk space:** `download_depot` ignores the install directory and always
+stages the full depot below `/home/steam` first, so a pinned install needs
+~25GB there on top of the ~25GB in the server volume. The staging copy is
+removed as soon as it has been moved into place. If you mounted a Steam session
+volume at `/home/steam/Steam`, the staging copy may land there.
 
 ## Cluster and multi-map support
 
