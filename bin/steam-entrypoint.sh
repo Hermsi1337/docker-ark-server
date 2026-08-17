@@ -76,6 +76,47 @@ function copy_missing_file() {
   fi
 }
 
+function ini_file_for_instance() {
+  local instance="${1}"
+  local var_name="${2}"
+  local sub_var_name
+
+  if [[ "${instance}" == sub.* ]]; then
+    sub_var_name="SUB_${instance#sub.}_${var_name}"
+    if [[ -n "${!sub_var_name}" ]]; then
+      printf '%s' "${!sub_var_name}"
+      return
+    fi
+  fi
+
+  printf '%s' "${!var_name}"
+}
+
+function apply_ini_file() {
+  local source_file="${1}"
+  local destination="${2}"
+  local instance="${3}"
+
+  [[ -n "${source_file}" ]] || return 0
+
+  if [[ ! -f "${source_file}" ]]; then
+    echo "ERROR: instance ${instance} is configured to use '${source_file}', but that file does not exist."
+    echo "       Mount it into the container, or unset the variable to keep the config in the server volume."
+    exit 1
+  fi
+
+  # nothing to do if the config already matches - this also keeps an existing
+  # .bak from being overwritten with an identical copy on every restart
+  if cmp -s "${source_file}" "${destination}"; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${destination}")"
+  [[ ! -f "${destination}" ]] || cp -a "${destination}" "${destination}.bak"
+  cp "${source_file}" "${destination}"
+  echo "...applied ${source_file} to ${destination} for instance ${instance}"
+}
+
 function needs_install() {
   local SERVER_DIR="${ARK_SERVER_VOLUME}/server"
   local SERVER_EXEC="${SERVER_DIR}/ShooterGame/Binaries/Linux/ShooterGameServer"
@@ -631,6 +672,17 @@ rm -f "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".*.pid \
 INSTANCES=(main)
 for KEY in "${SUB_KEYS[@]}"; do
   INSTANCES+=("sub.${KEY}")
+done
+
+# arkmanager only copies arkGameUserSettingsIniFile/arkGameIniFile over the
+# save dir config in its 'start' path, and we run 'run' to stay PID 1 - so do
+# it here. All instances of a container share one config directory, therefore
+# every copy has to be finished before the first server process reads it.
+for INSTANCE in "${INSTANCES[@]}"; do
+  apply_ini_file "$(ini_file_for_instance "${INSTANCE}" ARK_GAME_USER_SETTINGS_INI_FILE)" \
+    "${CONFIG_DIR}/GameUserSettings.ini" "${INSTANCE}"
+  apply_ini_file "$(ini_file_for_instance "${INSTANCE}" ARK_GAME_INI_FILE)" \
+    "${CONFIG_DIR}/Game.ini" "${INSTANCE}"
 done
 
 for INSTANCE in "${INSTANCES[@]}"; do
