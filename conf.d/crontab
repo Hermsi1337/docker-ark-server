@@ -43,3 +43,9 @@ BASH_ENV=/app/environment
 # */15 * * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
 # Example : backup every day at midnight
 # 0 0 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
+#
+# In cluster mode add --cluster, otherwise the uploaded characters, dinos and
+# items in /cluster are left out of the backup. With sub instances every
+# instance then carries its own copy of the cluster data.
+# Example : backup every day at midnight, cluster data included
+# 0 0 * * * arkmanager backup @all --cluster >> /app/log/crontab.log 2>&1

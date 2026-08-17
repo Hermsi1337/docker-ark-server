@@ -122,7 +122,7 @@ Basic configuration is done with environment variables:
 | UPDATE_ON_START | false | Update the ARK server and mods (with a backup, if configured) before each start |
 | VALIDATE_ON_START | false | Let `steamcmd` validate and repair the server files during `UPDATE_ON_START` — useful after a corrupted update, but makes the start noticeably slower |
 | PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
-| BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully |
+| BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully. In cluster mode the `/cluster` transfer data is included, see [Cluster backups](#cluster-backups) |
 | MAX_BACKUP_SIZE_MB | `empty` | Size budget for `/app/backup`, in megabytes. arkmanager deletes the oldest backups once the directory grows past it, see [Backup retention](#backup-retention) |
 | WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |
 | ALWAYS_RESTART_ON_CRASH | `empty` | Set to `true` to let arkmanager restart an instance that crashes before it finished starting. Read [Crash restarts](#crash-restarts) first, this can loop forever |
@@ -596,6 +596,9 @@ vim "${HOME}/ark-server/crontab"
 
 Jobs run as the `steam` user.
 
+In cluster mode add `--cluster` to the backup job, otherwise the transfer data
+in `/cluster` is left out (see [Cluster backups](#cluster-backups)).
+
 The container environment is exported to `/app/environment` on every start and
 loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
 same variables as the server process. Both header lines are required, cron
@@ -783,6 +786,35 @@ would swap the shared server binaries underneath the still-running others.
 Stopping instances by hand shows up in the [health check](#health-check): the
 container stays healthy as long as one instance is running, and reports
 unhealthy about five minutes after the last one is gone.
+
+### Cluster backups
+
+`arkmanager backup` only picks up the cluster directory when you call it with
+`--cluster`. Without the flag your worlds are backed up but the uploaded
+characters, dinos and items in `/cluster` are not.
+
+The container passes `--cluster` on its own when `BACKUP_ON_STOP=true` and
+`CLUSTER_ID` is set. Everywhere else you have to add it yourself:
+
+```bash
+docker exec -u steam ark-server arkmanager backup @all --cluster
+```
+
+Same for [cronjobs](#add-cronjobs) and for the pre-update backup, which
+arkmanager runs without the flag (`PRE_UPDATE_BACKUP` covers the world, not
+the cluster). Two things to keep in mind:
+
+- With sub instances every instance tarball gets its own copy of the cluster
+  directory, so backups grow with the number of maps.
+- `arkmanager.cfg` ships `arkMaxBackupSizeMB="500"`, and arkmanager silently
+  deletes the oldest backups once the backup directory passes that limit.
+  Bigger backups hit it sooner, so raise the value in
+  `<your-volume>/arkmanager/arkmanager.cfg` if you want to keep the same
+  history.
+
+`arkmanager restore` puts `Cluster/*` back into the cluster directory, so when
+you [restore](#restore-a-backup) a cluster backup the throwaway container needs
+`-e CLUSTER_ID=<id>` and the `/cluster` mount as well.
 
 ### Example: 3 maps in 1 container
 
@@ -974,6 +1006,10 @@ docker start ark-server
 
 If you run with `PUID`/`PGID`, replace `gosu steam` with `gosu <PUID>:<PGID>`
 (gosu accepts numeric ids) so the restored files get the right owner.
+
+Restoring a [cluster backup](#cluster-backups) additionally needs
+`-e CLUSTER_ID=<id>` and the `/cluster` mount on the throwaway container,
+otherwise arkmanager has nowhere to put the `Cluster/*` files.
 
 ### Xbox crossplay?
 

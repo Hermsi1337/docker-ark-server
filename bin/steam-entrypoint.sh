@@ -43,7 +43,11 @@ function stop_server() {
 
   if [[ "${BACKUP_ON_STOP}" == "true" ]]; then
     echo "\$BACKUP_ON_STOP is 'true', creating a backup..."
-    ${ARKMANAGER} backup @all || echo "Backup on stop failed, continuing shutdown..."
+    # arkmanager skips the cluster directory unless it is called with
+    # --cluster, so the transfer data would never end up in a backup
+    local BACKUP_ARGS=()
+    [[ -z "${CLUSTER_ID}" ]] || BACKUP_ARGS+=(--cluster)
+    ${ARKMANAGER} backup @all "${BACKUP_ARGS[@]}" || echo "Backup on stop failed, continuing shutdown..."
   fi
 
   # terminate any run processes that are still alive (e.g. the signal arrived
