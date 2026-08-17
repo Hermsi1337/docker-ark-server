@@ -101,9 +101,17 @@ downstream compose files and scripts.
   renumbered it in 0.10.0, and contributors on Ubuntu 24.04 have 0.9.x.
 **Tests** (`tests.yml`):
 
-- Triggers on `pull_request` against `master` and on pushes to `master`.
-- Installs bats from apt and runs `bats tests`. Nothing here builds an image
-  or talks to the network, so it finishes in seconds.
+- Triggers on `pull_request` against `master`, on pushes to `master` and via
+  `workflow_dispatch`. Only pull request runs get cancelled by a newer push,
+  every master commit finishes.
+- Runs `bash -n` over the shell scripts, then the bats suite. The syntax check
+  is not redundant: sourcing the entrypoint never parses the startup half, so
+  without it a broken startup sequence passes the suite.
+- bats comes from `bats-core/bats-action` with a pinned version. The suite
+  needs bats 1.4.0 or newer (`BATS_TEST_TMPDIR`), which is why the distro
+  package is not used.
+- Nothing here builds an image or talks to the network, so it finishes in
+  seconds.
 
 **Required repository secrets:**
 
@@ -138,11 +146,16 @@ downstream compose files and scripts.
 ## Common tasks
 
 - **Run the tests:** `bats tests` from the repository root
-  (`brew install bats-core`, or `apt install bats`). The suite sources
+  (`brew install bats-core`, needs 1.4.0 or newer). The suite sources
   `bin/steam-entrypoint.sh` and exercises the pure-bash parts (sub instance
   keys and ports, generated sub instance configs, the `Game.ini` symlink
-  healing, mod id collection, install detection). It never installs a server,
+  healing, mod id collection, install detection, the directory setup, the
+  cluster config guard, the disk space check). It never installs a server,
   arkmanager and steamcmd are stubbed in `tests/stubs`.
+- **Writing tests:** assert with `[ ... ]` or the helpers in
+  `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
+  failing non-final `[[ ... ]]` does not fail the test, so those assertions
+  pass locally and only bite in CI.
 - **Bump the arkmanager pin:** automated — the "Update arkmanager pin"
   workflow opens a weekly PR when a new ark-server-tools release exists;
   review and merge it. Manual fallback: check

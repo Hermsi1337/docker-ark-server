@@ -58,7 +58,7 @@ function stop_server() {
 
 function create_missing_dir() {
   for DIRECTORY in "${@}"; do
-    [[ -n "${DIRECTORY}" ]] || return
+    [[ -n "${DIRECTORY}" ]] || continue
     if [[ ! -d "${DIRECTORY}" ]]; then
       mkdir -p "${DIRECTORY}"
       echo "...successfully created ${DIRECTORY}"

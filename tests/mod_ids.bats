@@ -31,7 +31,9 @@ setup() {
   run get_all_mod_ids
 
   [ "${#lines[@]}" -eq 3 ]
-  [[ "$output" == *"222222"* ]]
+  [ "$output" = "111111
+222222
+333333" ]
 }
 
 @test "collects mods of sub instances" {
@@ -41,10 +43,9 @@ setup() {
 
   run get_all_mod_ids
 
-  [ "${#lines[@]}" -eq 3 ]
-  [[ "$output" == *"444444"* ]]
-  [[ "$output" == *"555555"* ]]
-  [[ "$output" == *"666666"* ]]
+  [ "$output" = "444444
+555555
+666666" ]
 }
 
 @test "reports a mod used by main and a sub instance only once" {
@@ -77,4 +78,14 @@ setup() {
   run get_all_mod_ids
 
   [ "${#lines[@]}" -eq 2 ]
+  [ "$output" = "111111
+222222" ]
+}
+
+@test "collects the ids without calling arkmanager or steamcmd" {
+  GAME_MOD_IDS="111111"
+
+  run get_all_mod_ids
+
+  assert_stubs_installed_and_unused
 }

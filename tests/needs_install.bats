@@ -20,7 +20,7 @@ install_server_files() {
   run needs_install
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"${SERVER_DIR} not found"* ]]
+  assert_contains "$output" "${SERVER_DIR} not found"
 }
 
 @test "is satisfied by a complete install" {
@@ -39,7 +39,7 @@ install_server_files() {
   run needs_install
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ShooterGameServer is not complete"* ]]
+  assert_contains "$output" "ShooterGameServer is not complete"
 }
 
 @test "wants an install when the server executable is empty" {
@@ -49,7 +49,7 @@ install_server_files() {
   run needs_install
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"is not complete"* ]]
+  assert_contains "$output" "ShooterGameServer is not complete"
 }
 
 @test "wants an install when the steam app manifest is missing" {
@@ -59,7 +59,7 @@ install_server_files() {
   run needs_install
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"appmanifest_376030.acf is not complete"* ]]
+  assert_contains "$output" "appmanifest_376030.acf is not complete"
 }
 
 @test "is satisfied by a legacy install that only has version.txt" {
@@ -70,7 +70,7 @@ install_server_files() {
   run needs_install
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"found ${SERVER_DIR}/version.txt"* ]]
+  assert_contains "$output" "found ${SERVER_DIR}/version.txt"
 }
 
 @test "wants a repair install when version.txt outlives the server executable" {
@@ -81,7 +81,8 @@ install_server_files() {
   run needs_install
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"is not complete"* ]]
+  assert_contains "$output" "is not complete"
+  assert_not_contains "$output" "Already installed"
 }
 
 @test "checks the files without calling arkmanager or steamcmd" {
@@ -89,5 +90,5 @@ install_server_files() {
 
   run needs_install
 
-  assert_no_stub_calls
+  assert_stubs_installed_and_unused
 }

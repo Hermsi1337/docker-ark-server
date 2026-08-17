@@ -33,7 +33,7 @@ setup() {
   run assert_valid_sub_instance_ports
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"GAME_CLIENT_PORT='07778' must be a plain port number"* ]]
+  assert_contains "$output" "GAME_CLIENT_PORT='07778' must be a plain port number"
 }
 
 @test "rejects a non numeric port" {
@@ -42,7 +42,7 @@ setup() {
   run assert_valid_sub_instance_ports
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"RCON_PORT='32330a'"* ]]
+  assert_contains "$output" "RCON_PORT='32330a'"
 }
 
 @test "rejects an empty port" {
@@ -51,7 +51,7 @@ setup() {
   run assert_valid_sub_instance_ports
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"SERVER_LIST_PORT=''"* ]]
+  assert_contains "$output" "SERVER_LIST_PORT=''"
 }
 
 @test "rejects a port given as an arithmetic expression" {
@@ -60,5 +60,5 @@ setup() {
   run assert_valid_sub_instance_ports
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"SERVER_LIST_PORT='27015+1'"* ]]
+  assert_contains "$output" "SERVER_LIST_PORT='27015+1'"
 }

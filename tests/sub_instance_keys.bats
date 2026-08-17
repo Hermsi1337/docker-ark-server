@@ -52,7 +52,7 @@ setup() {
   run parse_sub_instance_keys
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid SUB_INSTANCE_KEYS entry 'the-island'"* ]]
+  assert_contains "$output" "invalid SUB_INSTANCE_KEYS entry 'the-island'"
 }
 
 @test "rejects a key with embedded whitespace instead of collapsing it" {
@@ -61,7 +61,7 @@ setup() {
   run parse_sub_instance_keys
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"invalid SUB_INSTANCE_KEYS entry 'the island'"* ]]
+  assert_contains "$output" "invalid SUB_INSTANCE_KEYS entry 'the island'"
 }
 
 @test "rejects a key that would expand a shell variable" {
@@ -70,7 +70,7 @@ setup() {
   run parse_sub_instance_keys
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"letters, digits and underscores"* ]]
+  assert_contains "$output" "letters, digits and underscores"
 }
 
 @test "rejects duplicate keys" {
@@ -79,7 +79,7 @@ setup() {
   run parse_sub_instance_keys
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"duplicate SUB_INSTANCE_KEYS entry 'ragnarok'"* ]]
+  assert_contains "$output" "duplicate SUB_INSTANCE_KEYS entry 'ragnarok'"
 }
 
 @test "duplicates are detected after trimming" {
@@ -88,7 +88,7 @@ setup() {
   run parse_sub_instance_keys
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"duplicate"* ]]
+  assert_contains "$output" "duplicate"
 }
 
 @test "keys differing in case are not duplicates" {

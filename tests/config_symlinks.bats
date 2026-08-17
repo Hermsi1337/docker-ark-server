@@ -18,14 +18,23 @@ setup() {
   [ "$(readlink GameUserSettings.ini)" = "./${CONFIG_DIR}/GameUserSettings.ini" ]
 }
 
-@test "leaves existing symlinks alone" {
-  mkdir -p "${CONFIG_DIR}"
-  echo "kept" > "${CONFIG_DIR}/Game.ini"
-  ln -s "./${CONFIG_DIR}/Game.ini" Game.ini
+@test "keeps a symlink the user pointed at a target of their own" {
+  mkdir -p "${BATS_TEST_TMPDIR}/shared"
+  echo "shared config" > "${BATS_TEST_TMPDIR}/shared/Game.ini"
+  ln -s "${BATS_TEST_TMPDIR}/shared/Game.ini" Game.ini
 
   heal_config_symlinks
 
-  [ "$(cat Game.ini)" = "kept" ]
+  [ "$(readlink Game.ini)" = "${BATS_TEST_TMPDIR}/shared/Game.ini" ]
+  [ "$(cat Game.ini)" = "shared config" ]
+}
+
+@test "keeps a dangling symlink instead of replacing it" {
+  ln -s /does/not/exist Game.ini
+
+  heal_config_symlinks
+
+  [ "$(readlink Game.ini)" = "/does/not/exist" ]
 }
 
 @test "adopts an uploaded regular file as the real config" {
@@ -33,7 +42,7 @@ setup() {
 
   run heal_config_symlinks
 
-  [[ "$output" == *"is a regular file but should be a symlink"* ]]
+  assert_contains "$output" "is a regular file but should be a symlink"
   [ -L Game.ini ]
   [ "$(cat "${CONFIG_DIR}/Game.ini")" = "uploaded by the user" ]
   [ "$(cat Game.ini)" = "uploaded by the user" ]
@@ -75,7 +84,7 @@ setup() {
 
   run heal_config_symlinks
 
-  [[ "$output" == *"exists but is not a file - moving it aside"* ]]
+  assert_contains "$output" "exists but is not a file - moving it aside"
   [ -L Game.ini ]
   run find . -maxdepth 1 -type d -name 'Game.ini.invalid.*'
   [ -n "$output" ]
@@ -90,4 +99,12 @@ setup() {
   [ -L Game.ini ]
   [ "$(cat Game.ini)" = "uploaded by the user" ]
   [ ! -e "${CONFIG_DIR}/Game.ini.bak" ]
+}
+
+@test "heals the symlinks without calling arkmanager or steamcmd" {
+  echo "uploaded by the user" > Game.ini
+
+  heal_config_symlinks
+
+  assert_stubs_installed_and_unused
 }
