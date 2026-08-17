@@ -23,6 +23,17 @@ BASH_ENV=/app/environment
 # so it must stop/restart all instances, not just one)
 # Example : update every day at 4am
 # 0 4 * * * arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
+#
+# Example : staged update, pull the new build into /app/staging at 4am while
+#           players keep playing, apply it at 6am with a warning countdown.
+#           Only the second job stops the server, and it is short because the
+#           files are already there. Schedule both or neither: the apply job on
+#           its own stops the server, copies back what is already in staging and
+#           starts again, without picking up anything new.
+#           --warn obeys arkwarnminutes (60 by default), so the 6am job really
+#           restarts at 7am. Details and disk notes in the README.
+# 0 4 * * * arkmanager update @all --downloadonly --update-mods >> /app/log/crontab.log 2>&1
+# 0 6 * * * arkmanager update @all --no-download --update-mods --warn >> /app/log/crontab.log 2>&1
 # Example : backup every 15min
 # */15 * * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
 # Example : backup every day at midnight

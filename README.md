@@ -174,7 +174,7 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/server` | The ARK dedicated server installation |
 | `/app/backup` | Backups created by `arkmanager backup` |
 | `/app/log` | arkmanager log files |
-| `/app/staging` | Staging directory for server updates |
+| `/app/staging` | Staging directory for [staged updates](#staged-updates-shorter-downtime) |
 | `/app/crontab` | Cron definitions loaded at container start |
 | `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
 | `/app/arkmanager` | Persisted arkmanager configuration (global + instance). `instances/sub.*.cfg` are auto-regenerated on every start |
@@ -268,6 +268,39 @@ The crontab is loaded when the container starts, so apply your changes with:
 ```bash
 docker restart ark-server
 ```
+
+#### Staged updates (shorter downtime)
+
+A plain `arkmanager update` downloads the new build with the server already
+stopped, so players sit out the whole steamcmd run. The image wires
+`/app/staging` up as arkmanager's staging directory, which lets you split that
+into two jobs: `--downloadonly` fetches the new build while the server keeps
+serving players, and a later `--no-download` copies it into place and restarts.
+Only the second job costs downtime, and it is short because staging and the
+server files live on the same volume, so the copy is hardlinks and not real
+data.
+
+```bash
+0 4 * * * arkmanager update @all --downloadonly --update-mods >> /app/log/crontab.log 2>&1
+0 6 * * * arkmanager update @all --no-download --update-mods --warn >> /app/log/crontab.log 2>&1
+```
+
+The gap between the two can be hours, the apply job simply takes whatever is in
+staging. Schedule both or neither, though: on its own the apply job stops the
+server, copies back the staging content it already has and starts again,
+without picking up the new build. `--warn` obeys `arkwarnminutes` from
+`arkmanager.cfg` (60 here), so the 6am job actually restarts at 7am. Mods only
+get their download moved out of the downtime window, the slow unpacking into
+the server still happens in the apply job. And if Wildcard ships another build
+between the two jobs you get the one you staged, the next cycle catches up.
+
+Keep some disk headroom for this. Staging is seeded with hardlinks so it starts
+out nearly free, but each update needs room for the files it replaces (a few GB
+in practice). Mounting `/app/staging` from a different filesystem than
+`/app/server` makes arkmanager fall back to rsync, which means a full second
+copy of the server and a slow apply, so don't. Note that the entrypoint's disk
+check only guards the very first install (25 GB) and never runs again, nothing
+warns you when the volume fills up later.
 
 ### Configure a Steam login session
 
