@@ -1,0 +1,21 @@
+---
+extends: default
+
+rules:
+  # Workflow and compose files are single documents and nobody writes the
+  # "---" marker for them.
+  document-start: disable
+
+  # "on:" is a GitHub Actions keyword, not the boolean yamllint reads it as.
+  truthy:
+    check-keys: false
+
+  # Action expressions and shell one-liners do not wrap nicely. Keep a ceiling
+  # that still catches genuinely runaway lines.
+  line-length:
+    max: 160
+
+  # deploy/docker-compose.yml comments out optional settings as "#- FOO=bar"
+  # on purpose: deleting just the "#" leaves the line correctly indented.
+  comments:
+    require-starting-space: false

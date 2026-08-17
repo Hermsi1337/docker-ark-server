@@ -41,6 +41,8 @@ downstream compose files and scripts.
 | `.github/workflows/build-and-deploy.yml` | "Build and Publish" — builds and pushes to all three registries |
 | `.github/workflows/deploy-preview.yml` | "Build PR Preview" — builds PRs, pushes `pr-<n>` for same-repo PRs |
 | `.github/workflows/update-arkmanager-pin.yml` | "Update arkmanager pin" — weekly bump PR for the `ARK_TOOLS_VERSION` default |
+| `.github/workflows/lint.yml` | "Lint" — shellcheck, yamllint and hadolint on PRs and `master` |
+| `.yamllint` | yamllint rule config; every disabled rule carries the reason it is off |
 | `.github/dependabot.yml` | Weekly `github-actions` version updates |
 
 ## CI/CD
@@ -73,6 +75,29 @@ downstream compose files and scripts.
   events); close/reopen the PR to run it, or rely on the master build after
   merge. The actions it uses are themselves covered by Dependabot.
 
+**Lint** (`lint.yml`):
+
+- Triggers on `pull_request` against `master` and on pushes to `master`;
+  concurrency-guarded per ref.
+- Three independent jobs: shellcheck over `bin/*.sh` and
+  `deploy/steam-login.sh`, yamllint over `.github/workflows/` and
+  `deploy/docker-compose.yml`, hadolint over the `Dockerfile`.
+- Kept separate from the publish workflows on purpose so a lint failure can
+  never block a release. The publish workflows keep their own `bash -n`
+  syntax check as the hard gate.
+- shellcheck and yamllint versions are pinned in the workflow's `env:` block,
+  not taken from the runner image, so a runner roll cannot turn `master` red on
+  code nobody touched. Bump them by hand. hadolint's version rides the action
+  tag, which Dependabot bumps.
+- Suppressions are targeted, never repo wide: every hadolint ignore sits inline
+  on the instruction it applies to and every shellcheck disable on the function
+  it applies to, with the reason directly above. There is no `.hadolint.yaml`
+  on purpose, a repo wide `DL3064` ignore would kill the only check that would
+  catch a real credential baked into a layer later. If you add a suppression,
+  write down why, and make sure the reason is actually true.
+- `stop_server` carries both `SC2317` and `SC2329`. Same finding, shellcheck
+  renumbered it in 0.10.0, and contributors on Ubuntu 24.04 have 0.9.x.
+
 **Required repository secrets:**
 
 | Secret | Used for |
@@ -92,6 +117,10 @@ downstream compose files and scripts.
   `ARG ARK_TOOLS_VERSION="v1.6.69"` so local/manual builds are deterministic.
   The Dockerfile picks `--tag` vs `--commit` for `netinstall.sh` based on a
   leading `v`. CI overrides the ARG with a resolved commit SHA at build time.
+- **`SHELL ["/bin/bash", "-o", "pipefail", "-c"]` stays above the install
+  `RUN`.** The `RUN` pipes `netinstall.sh` into `bash`. Without `pipefail` a
+  failed download exits 0, the build happily continues and the image ships
+  without arkmanager.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 
