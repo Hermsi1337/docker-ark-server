@@ -123,7 +123,9 @@ Basic configuration is done with environment variables:
 | VALIDATE_ON_START | false | Let `steamcmd` validate and repair the server files during `UPDATE_ON_START` — useful after a corrupted update, but makes the start noticeably slower |
 | PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
 | BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully |
+| MAX_BACKUP_SIZE_MB | `empty` | Size budget for `/app/backup`, in megabytes. arkmanager deletes the oldest backups once the directory grows past it, see [Backup retention](#backup-retention) |
 | WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |
+| ALWAYS_RESTART_ON_CRASH | `empty` | Set to `true` to let arkmanager restart an instance that crashes before it finished starting. Read [Crash restarts](#crash-restarts) first, this can loop forever |
 | ENABLE_CROSSPLAY | false | Enable crossplay (starts the server with `-crossplay`). When enabled, BattlEye should be disabled as it likes to disconnect Epic players |
 | DISABLE_BATTLEYE | false | Disable BattlEye protection (starts the server with `-NoBattlEye`) |
 | ARK_EXTRA_OPTS | `empty` | Additional ARK command line options, space separated (e.g. `ARK_EXTRA_OPTS=-ForceAllowCaveFlyers -PreventHibernation`). Each option must be of the form `-Flag` or `-Name=Value`; spaces inside an option are not supported |
@@ -192,6 +194,62 @@ For plain `docker` commands use `docker stop -t 300 ark-server` (and
 Note: the world save itself is additionally bounded by arkmanager-internal
 timeouts (roughly 50 seconds) — the grace period has to cover the shutdown
 warning, the save, the optional backup and the process shutdown.
+
+### Backup retention
+
+`MAX_BACKUP_SIZE_MB` caps the size of `/app/backup`. After every backup
+arkmanager walks the directory newest first and deletes everything past the
+budget, with a plain `rm` and no log line. Five things to know before you set
+it:
+
+Whether you have a cap today depends on how old your volume is. The bundled
+`arkmanager.cfg` only got `arkMaxBackupSizeMB="500"` in September 2025, and
+that file is copied into the volume exactly once, so older volumes run with no
+cap at all and grow forever. This image does not retrofit one, adding a cap
+where there was none would start deleting your history on the next backup. Set
+the variable if you want a cap.
+
+The budget is shared. Every instance backs up into the same `/app/backup` and
+the prune walks the whole directory, so on a multi-map setup one big map can
+delete every other map's backups.
+
+arkmanager only prunes above 64MB, so 64 and below disable it and 65 is the
+smallest value that does anything. `0` is the readable way to say "no cap".
+The value has to be a plain number of megabytes, no `2GB`, no leading zero
+(bash would read that as octal). The container refuses to start otherwise
+instead of letting every backup fail arithmetically.
+
+Two hand edits beat the variable. `arkMaxBackupSizeMB` in
+`/app/arkmanager/instances/main.cfg`, because arkmanager sources the instance
+config after the global one. And `arkMaxBackupSizeGB` anywhere, because
+arkmanager multiplies it into the megabyte value before it looks at the budget,
+and we ship that setting commented out one line below the one this variable
+drives. Startup warns you about both, comment them out to put the variable back
+in charge.
+
+### Crash restarts
+
+By default arkmanager only arms its auto-restart once the server is up and
+accepting players. If an instance dies before that, the run loop exits, the
+entrypoint exits, and Docker's `restart: always` recreates the container.
+`ALWAYS_RESTART_ON_CRASH=true` arms it immediately instead, so the restart
+happens inside the container.
+
+That is the point on a multi-map setup: without it, a sub instance that dies
+while loading (bad mod, OOM) is simply gone and the container happily keeps
+serving the other maps. With it, that instance comes back on its own.
+
+The price is that you give up your safety net. The container stays `Up`
+forever, so the entrypoint is never re-entered and the repair path behind
+`UPDATE_ON_START` and `VALIDATE_ON_START` never runs. arkmanager relaunches
+roughly every five seconds, with no backoff and no cap, so a genuinely broken
+install just burns CPU until you notice. To get out, remove the variable and
+recreate the container (`docker compose up -d --force-recreate`).
+
+The value has to be lowercase `true` or `false`. arkmanager treats any non-empty
+value as "on", so this image only ever forwards an exact `true`, and the
+container refuses to start on anything else rather than let `True` or `yes` look
+accepted and do nothing.
 
 ### Data layout
 

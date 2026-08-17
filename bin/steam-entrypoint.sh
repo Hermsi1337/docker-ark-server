@@ -208,6 +208,71 @@ function warn_on_hardcoded_discord_webhook() {
   done
 }
 
+function add_block_to_arkmanager_cfg() {
+  local -r description="${1}"
+  local -r marker="${2}"
+  local -r block="${3}"
+  local config staged
+
+  # the marker decides whether the block is already there, so a marker the
+  # block never contains would append it again on every start
+  case "${block}" in
+    *"${marker}"*) ;;
+    *)
+      echo "ERROR: marker '${marker}' does not occur in the ${description} block."
+      exit 1
+      ;;
+  esac
+
+  # a user may have replaced the config with a symlink - work on its target,
+  # otherwise cp recreates the symlink over the staged file and the append
+  # writes straight into the live config the rename is meant to protect
+  config="$(readlink -f "${ARK_TOOLS_DIR}/arkmanager.cfg")"
+
+  # match the generated assignment, not the variable name: a user comment
+  # mentioning the variable must not count as "already migrated"
+  if grep -qF "${marker}" "${config}"; then
+    return
+  fi
+
+  echo "Adding ${description} to the existing arkmanager.cfg ..."
+
+  # stage and rename instead of appending in place: arkmanager sources this
+  # file, so a half-written assignment (full disk) would break every command
+  if ! staged="$(mktemp "${config}.XXXXXX")"; then
+    echo "WARNING: could not stage ${config} (read-only?), continuing without ${description}..."
+    return
+  fi
+  STAGED_CONFIG="${staged}"
+
+  if ! cp -p "${config}" "${staged}" || ! printf '\n%s\n' "${block}" >> "${staged}"; then
+    echo "WARNING: could not write ${staged}, continuing without ${description}..."
+  elif ! mv "${staged}" "${config}"; then
+    echo "WARNING: could not replace ${config}, continuing without ${description}..."
+  fi
+
+  rm -f "${STAGED_CONFIG}"
+  STAGED_CONFIG=""
+}
+
+# the block lands in the config verbatim, arkmanager expands it when it sources
+# the file - expanding it here would freeze the current value into the config
+# shellcheck disable=SC2016
+function add_backup_retention_to_arkmanager_cfg() {
+  add_block_to_arkmanager_cfg 'backup retention settings' '|| arkMaxBackupSizeMB=' \
+'# Backup retention - active only when MAX_BACKUP_SIZE_MB is set (see README)
+[ -z "${MAX_BACKUP_SIZE_MB}" ] || arkMaxBackupSizeMB="${MAX_BACKUP_SIZE_MB}"'
+}
+
+# see add_backup_retention_to_arkmanager_cfg
+# shellcheck disable=SC2016
+function add_always_restart_on_crash_to_arkmanager_cfg() {
+  add_block_to_arkmanager_cfg 'crash restart settings' '|| arkAlwaysRestartOnCrash=true' \
+'# Crash restart - arkmanager arms auto-restart on any non-empty value,
+# so only a literal true may set it (see README)
+[ "${ALWAYS_RESTART_ON_CRASH}" != "true" ] || arkAlwaysRestartOnCrash=true'
+}
+
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
 # variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
 # arkmanager instance name - restrict keys to a safe charset and fail loudly
@@ -255,6 +320,56 @@ function assert_valid_sub_instance_ports() {
       fi
     done
   fi
+}
+
+# arkmanager compares the backup budget arithmetically after every backup: a
+# unit suffix aborts the comparison and skips pruning, a leading zero makes
+# bash read the value as octal
+function assert_valid_max_backup_size() {
+  if [[ -n "${MAX_BACKUP_SIZE_MB}" ]] && [[ ! "${MAX_BACKUP_SIZE_MB}" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "ERROR: MAX_BACKUP_SIZE_MB='${MAX_BACKUP_SIZE_MB}' must be a plain number of megabytes (no unit, no leading zero)."
+    echo "       Use 0 to disable the pruning of old backups."
+    exit 1
+  fi
+}
+
+# arkmanager arms the watchdog on any non-empty value, so the config only
+# forwards a literal true - without this every other spelling looks accepted
+# and does nothing
+function assert_valid_always_restart_on_crash() {
+  case "${ALWAYS_RESTART_ON_CRASH}" in
+    ""|"true"|"false") ;;
+    *)
+      echo "ERROR: ALWAYS_RESTART_ON_CRASH='${ALWAYS_RESTART_ON_CRASH}' must be 'true' or 'false' (lowercase)."
+      exit 1
+      ;;
+  esac
+}
+
+# upstream multiplies arkMaxBackupSizeGB into arkMaxBackupSizeMB before it
+# looks at the budget, and arkmanager sources the instance config last, so
+# either one silently wins over the environment variable
+function warn_on_overridden_backup_budget() {
+  local config
+  local -r instance_config="${ARK_TOOLS_DIR}/instances/main.cfg"
+
+  # a bare 'return' would hand the failed test's status to the startup
+  # sequence, and set -e would kill the container before it ever starts
+  [[ -n "${MAX_BACKUP_SIZE_MB}" ]] || return 0
+
+  for config in "$(readlink -f "${ARK_TOOLS_DIR}/arkmanager.cfg")" "${instance_config}"; do
+    [[ -f "${config}" ]] || continue
+
+    if grep -qE '^[[:space:]]*arkMaxBackupSizeGB=' "${config}"; then
+      echo "WARNING: ${config} assigns arkMaxBackupSizeGB, which overrides MAX_BACKUP_SIZE_MB."
+      echo "         Comment the line out to put the environment variable in charge."
+    fi
+
+    if [[ "${config}" == "${instance_config}" ]] && grep -qE '^[[:space:]]*arkMaxBackupSizeMB=' "${config}"; then
+      echo "WARNING: ${config} assigns arkMaxBackupSizeMB, which overrides MAX_BACKUP_SIZE_MB."
+      echo "         Comment the line out to put the environment variable in charge."
+    fi
+  done
 }
 
 function remake_sub_instances_cfg() {
@@ -369,6 +484,8 @@ trap '[ -z "${STAGED_CONFIG}" ] || rm -f "${STAGED_CONFIG}"; exit 143' TERM INT
 
 parse_sub_instance_keys
 assert_valid_sub_instance_ports
+assert_valid_max_backup_size
+assert_valid_always_restart_on_crash
 
 args=("$@")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
@@ -430,6 +547,9 @@ copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/
 add_cluster_to_arkmanager_cfg
 add_discord_to_arkmanager_cfg
 warn_on_hardcoded_discord_webhook
+add_backup_retention_to_arkmanager_cfg
+add_always_restart_on_crash_to_arkmanager_cfg
+warn_on_overridden_backup_budget
 remake_sub_instances_cfg
 
 # multi-instance needs per-instance autorestart files: the historic template

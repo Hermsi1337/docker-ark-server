@@ -151,8 +151,9 @@ downstream compose files and scripts.
   keys and ports, generated sub instance configs, the `Game.ini` symlink
   healing, mod id collection, install detection, the directory setup, the
   cluster config guard, the Discord config migration and its hardcoded
-  webhook warning, the disk space check). It never installs a server,
-  arkmanager and steamcmd are stubbed in `tests/stubs`.
+  webhook warning, the disk space check, the appended arkmanager.cfg blocks
+  and the backup budget and crash restart validation). It never installs a
+  server, arkmanager and steamcmd are stubbed in `tests/stubs`.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
   failing non-final `[[ ... ]]` does not fail the test, so those assertions
