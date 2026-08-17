@@ -156,8 +156,11 @@ function add_discord_to_arkmanager_cfg() {
   # otherwise the rename below would swap the symlink for a regular file
   config="$(readlink -f "${ARK_TOOLS_DIR}/arkmanager.cfg")"
 
-  # match the assignment, not the variable name: a user comment mentioning
-  # DISCORD_WEBHOOK_URL must not count as "already migrated"
+  # the marker is the guarded assignment, never a bare 'discordWebhookURL=':
+  # every volume created before this feature still holds the commented
+  # '# discordWebhookURL="https://discordapp.com/api/webhooks/..."' example
+  # that the template used to ship, and a looser marker would match it and
+  # skip the migration for exactly the users it exists for
   if grep -qF '|| discordWebhookURL=' "${config}"; then
     return
   fi
@@ -190,13 +193,19 @@ EOF
 }
 
 function warn_on_hardcoded_discord_webhook() {
-  local -r config="${ARK_TOOLS_DIR}/arkmanager.cfg"
+  local config
 
-  if grep -qE '^[[:space:]]*(export[[:space:]]+)?discordWebhookURL=' "${config}"; then
-    echo "WARNING: ${config} assigns discordWebhookURL directly."
-    echo "         That webhook keeps receiving notifications even when DISCORD_WEBHOOK_URL is empty."
-    echo "         Comment the line out to put the environment variable in charge."
-  fi
+  # arkmanager sources the global config first and the instance config after
+  # it, so a hardcoded URL in either one wins over the generated assignment
+  for config in "${ARK_TOOLS_DIR}/arkmanager.cfg" "${ARK_TOOLS_DIR}/instances/"*.cfg; do
+    [[ -f "${config}" ]] || continue
+
+    if grep -qE '^[[:space:]]*(export[[:space:]]+)?discordWebhookURL=' "${config}"; then
+      echo "WARNING: ${config} assigns discordWebhookURL directly."
+      echo "         That webhook keeps receiving notifications even when DISCORD_WEBHOOK_URL is empty."
+      echo "         Comment the line out to put the environment variable in charge."
+    fi
+  done
 }
 
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
@@ -403,8 +412,11 @@ cd "${ARK_SERVER_VOLUME}"
 # bash-based config files see the same variables as the server process
 #
 # the dump holds the admin password and the Discord webhook URL, so it must
-# never exist world-readable, not even for the duration of the write - the
-# umask covers a new file, the chmod one an older image version left behind
+# never exist world-readable, not even for the duration of the write. Removing
+# it first forces a fresh inode, otherwise the redirect would truncate a file
+# an older image version left at 644 and keep that mode; the chmod below is
+# the fallback for a file that could not be removed
+rm -f "${ARK_SERVER_VOLUME}/environment"
 (umask 077 && export -p | grep -Ev '^declare -x (PWD|OLDPWD|SHLVL)($|=)' > "${ARK_SERVER_VOLUME}/environment")
 chmod 600 "${ARK_SERVER_VOLUME}/environment" || echo "Failed to restrict permissions on ${ARK_SERVER_VOLUME}/environment, continuing startup..."
 

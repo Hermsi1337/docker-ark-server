@@ -150,7 +150,8 @@ downstream compose files and scripts.
   `bin/steam-entrypoint.sh` and exercises the pure-bash parts (sub instance
   keys and ports, generated sub instance configs, the `Game.ini` symlink
   healing, mod id collection, install detection, the directory setup, the
-  cluster config guard, the disk space check). It never installs a server,
+  cluster config guard, the Discord config migration and its hardcoded
+  webhook warning, the disk space check). It never installs a server,
   arkmanager and steamcmd are stubbed in `tests/stubs`.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a

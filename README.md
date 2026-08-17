@@ -165,10 +165,11 @@ tarball to a bug report.
 
 This works on existing volumes too. The startup appends the setting to an
 `arkmanager.cfg` that an older image version copied there, your own changes to
-that file stay untouched. If you had uncommented `discordWebhookURL` in that
-file yourself, you get a warning at startup: that hardcoded URL keeps receiving
-notifications even when `DISCORD_WEBHOOK_URL` is empty, so remove it if you
-want the variable to be in charge.
+that file stay untouched. If you had set `discordWebhookURL` by hand, either
+there or in an instance config under `/app/arkmanager/instances`, you get a
+warning at startup: that hardcoded URL keeps receiving notifications even when
+`DISCORD_WEBHOOK_URL` is empty, so remove it if you want the variable to be in
+charge.
 
 ### Graceful shutdown
 
