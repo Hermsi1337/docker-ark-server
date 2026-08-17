@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
 
+# arkmanager only takes its pre-update backup when it really updates something
+# (its own gate needs an app or a mod update), and ours has to follow that or
+# every container start writes a backup. 'checkupdate' exits non-zero when a
+# server update is available, 'checkmodupdate' exits zero when a mod update is.
+# --validate and --beta make arkmanager update unconditionally.
+function update_is_pending() {
+  [[ "${VALIDATE_ON_START}" != "true" ]] || return 0
+  [[ -z "${BETA}" ]] || return 0
+
+  if ! "${ARKMANAGER}" checkupdate @main >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ ${#ALL_GAME_MOD_IDS[@]} -gt 0 ]] && "${ARKMANAGER}" checkmodupdate @main >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
     [[ "${VALIDATE_ON_START}" != "true" ]] ||
@@ -22,13 +42,19 @@ function may_update() {
   # ourselves and switch the built-in one off for this call (arkmanager.cfg
   # derives arkBackupPreUpdate from PRE_UPDATE_BACKUP)
   local UPDATE_ENV=()
-  if [[ ${#CLUSTER_BACKUP_ARGS[@]} -gt 0 ]] && [[ "${PRE_UPDATE_BACKUP}" == "true" ]]; then
-    echo "Creating the pre-update backup including the cluster data..."
-    ${ARKMANAGER} backup @main "${CLUSTER_BACKUP_ARGS[@]}" ||
-      echo "Pre-update backup failed, continuing with the update..."
-    UPDATE_ENV=(PRE_UPDATE_BACKUP=false)
-  else
-    UPDATE_ARGS+=(--backup)
+  if [[ "${PRE_UPDATE_BACKUP}" == "true" ]]; then
+    if [[ ${#CLUSTER_BACKUP_ARGS[@]} -gt 0 ]] && update_is_pending; then
+      echo "Creating the pre-update backup including the cluster data..."
+      if ! "${ARKMANAGER}" backup @main "${CLUSTER_BACKUP_ARGS[@]}"; then
+        echo "ERROR: the pre-update backup failed - refusing to update without one."
+        echo "       Check the output above and the free disk space on ${ARK_SERVER_VOLUME},"
+        echo "       or set PRE_UPDATE_BACKUP=false to update without a backup."
+        exit 1
+      fi
+      UPDATE_ENV=(PRE_UPDATE_BACKUP=false)
+    else
+      UPDATE_ARGS+=(--backup)
+    fi
   fi
 
   # auto checks if a update is needed, if yes, then update the server or mods
@@ -712,7 +738,6 @@ trap '[ -z "${STAGED_CONFIG}" ] || rm -f "${STAGED_CONFIG}"; exit 143' TERM INT
 
 parse_sub_instance_keys
 assert_valid_sub_instance_ports
-resolve_cluster_backup_args
 assert_valid_max_backup_size
 assert_valid_always_restart_on_crash
 
@@ -793,6 +818,7 @@ add_always_restart_on_crash_to_arkmanager_cfg
 add_warn_minutes_to_arkmanager_cfg
 warn_on_overridden_backup_budget
 remake_sub_instances_cfg
+resolve_cluster_backup_args
 
 # multi-instance needs per-instance autorestart files: the historic template
 # pinned one shared arkautorestartfile, so 'arkmanager stop @one' would

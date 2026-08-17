@@ -121,7 +121,7 @@ Basic configuration is done with environment variables:
 | GAME_MOD_IDS | `empty` | Additional game mods to install, separated by comma (e.g. `GAME_MOD_IDS=487516323,487516324,487516325`) |
 | UPDATE_ON_START | false | Update the ARK server and mods (with a backup, if configured) before each start |
 | VALIDATE_ON_START | false | Let `steamcmd` validate and repair the server files during `UPDATE_ON_START` — useful after a corrupted update, but makes the start noticeably slower |
-| PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
+| PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server, but only when there is an update to apply. `false` updates without one |
 | BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully |
 | BACKUP_CLUSTER | false | Include the `/cluster` transfer data in the backups this image creates. Needs `CLUSTER_ID` and makes backups bigger and slower, read [Cluster backups](#cluster-backups) before enabling it |
 | MAX_BACKUP_SIZE_MB | `empty` | Size budget for `/app/backup`, in megabytes. arkmanager deletes the oldest backups once the directory grows past it, see [Backup retention](#backup-retention) |
@@ -805,6 +805,12 @@ below are why. For a manual backup pass the flag yourself:
 ```bash
 docker exec -u steam ark-server arkmanager backup @all --cluster
 ```
+
+The pre-update backup only runs when there is something to update, the
+container asks `arkmanager checkupdate` and `checkmodupdate` first. A container
+that restarts in a loop therefore does not write a backup on every boot. If
+that backup fails, the start aborts instead of updating without one, and
+`PRE_UPDATE_BACKUP=false` skips it entirely.
 
 **Check your retention limit first.** `arkmanager.cfg` ships
 `arkMaxBackupSizeMB="500"`. arkmanager applies that limit after *every single
