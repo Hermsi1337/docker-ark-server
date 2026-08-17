@@ -328,11 +328,18 @@ until morning.
 the two healthy maps keep it healthy and the dead one only shows up in the health
 log. Restarting the container would cut off the maps that are fine, and an
 instance that died while loading (bad map mod, for example) never comes back on
-its own, so it would restart forever. Set
+its own unless you set `ALWAYS_RESTART_ON_CRASH`, so it would restart forever. Set
 `HEALTHCHECK_REQUIRE_ALL_INSTANCES=true` if you would rather have the container
 go unhealthy as soon as one instance is missing. Note that this also applies to
 instances you stop by hand: with the default, `arkmanager stop @sub.Fjordur`
 keeps the container healthy, in strict mode it turns unhealthy.
+
+**`ALWAYS_RESTART_ON_CRASH` makes healthy mean less.** With it on, arkmanager
+relaunches a crashed instance in place every five seconds, so a crash looping
+server almost always has a live process and the container keeps reporting
+healthy. That is the container doing what you asked for, but the health status
+is then not the thing that will tell you something is wrong, watch the logs.
+See [Crash restarts](#crash-restarts).
 
 **No port probing.** arkmanager's run loop already watches the game port and
 restarts an instance that stopped listening for 60 seconds. Failing the health
