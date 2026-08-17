@@ -65,6 +65,8 @@ services:
       # # Cluster / multi-map settings, see the README section
       # # "Cluster and multi-map support" for all SUB_<KEY>_* variables
       #- CLUSTER_ID=MyCluster
+      # # Include the cluster transfer data in backups, see "Cluster backups"
+      #- BACKUP_CLUSTER=true
       #- SUB_INSTANCE_KEYS=Fjordur,Caballus_P
       #- SUB_Caballus_P_SERVER_MAP_MOD_ID=1679826889
     ports:

@@ -27,6 +27,7 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             BACKUP_ON_STOP="false" \
             PRE_UPDATE_BACKUP="true" \
             MAX_BACKUP_SIZE_MB="" \
+            BACKUP_CLUSTER="false" \
             WARN_ON_STOP="true" \
             ALWAYS_RESTART_ON_CRASH="" \
             BACKUP_CRON="" \

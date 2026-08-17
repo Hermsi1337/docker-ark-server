@@ -9,7 +9,7 @@ function may_update() {
 
   echo "\$UPDATE_ON_START is 'true'..."
 
-  local UPDATE_ARGS=(--verbose --update-mods --backup --no-autostart)
+  local UPDATE_ARGS=(--verbose --update-mods --no-autostart)
   # let steamcmd validate and repair the installed files, e.g. after a
   # corrupted download - slower, therefore opt-in
   if [[ "${VALIDATE_ON_START}" == "true" ]]; then
@@ -17,12 +17,26 @@ function may_update() {
     UPDATE_ARGS+=(--validate)
   fi
 
+  # arkmanager's own pre-update backup runs without the cluster data and
+  # 'update' exits 1 on the unknown option --cluster, so take that backup
+  # ourselves and switch the built-in one off for this call (arkmanager.cfg
+  # derives arkBackupPreUpdate from PRE_UPDATE_BACKUP)
+  local UPDATE_ENV=()
+  if [[ ${#CLUSTER_BACKUP_ARGS[@]} -gt 0 ]] && [[ "${PRE_UPDATE_BACKUP}" == "true" ]]; then
+    echo "Creating the pre-update backup including the cluster data..."
+    ${ARKMANAGER} backup @main "${CLUSTER_BACKUP_ARGS[@]}" ||
+      echo "Pre-update backup failed, continuing with the update..."
+    UPDATE_ENV=(PRE_UPDATE_BACKUP=false)
+  else
+    UPDATE_ARGS+=(--backup)
+  fi
+
   # auto checks if a update is needed, if yes, then update the server or mods
   # (otherwise it just does nothing). At boot time no instance is running yet,
   # so updating via @main is enough - post-boot updates in a multi-instance
   # setup must target @all instead (see the crontab examples), because an
   # update swaps the shared binaries but only restarts the chosen instance
-  ${ARKMANAGER} update @main "${UPDATE_ARGS[@]}" "${BETA_ARGS[@]}"
+  env "${UPDATE_ENV[@]}" "${ARKMANAGER}" update @main "${UPDATE_ARGS[@]}" "${BETA_ARGS[@]}"
 }
 
 # invoked indirectly via 'trap stop_server TERM INT'; SC2317 is what shellcheck
@@ -43,11 +57,7 @@ function stop_server() {
 
   if [[ "${BACKUP_ON_STOP}" == "true" ]]; then
     echo "\$BACKUP_ON_STOP is 'true', creating a backup..."
-    # arkmanager skips the cluster directory unless it is called with
-    # --cluster, so the transfer data would never end up in a backup
-    local BACKUP_ARGS=()
-    [[ -z "${CLUSTER_ID}" ]] || BACKUP_ARGS+=(--cluster)
-    ${ARKMANAGER} backup @all "${BACKUP_ARGS[@]}" || echo "Backup on stop failed, continuing shutdown..."
+    ${ARKMANAGER} backup @all "${CLUSTER_BACKUP_ARGS[@]}" || echo "Backup on stop failed, continuing shutdown..."
   fi
 
   # terminate any run processes that are still alive (e.g. the signal arrived
@@ -446,6 +456,29 @@ function add_warn_minutes_to_arkmanager_cfg() {
 [ -z "${UPDATE_WARN_MINUTES}" ] || arkwarnminutes="${UPDATE_WARN_MINUTES}"'
 }
 
+# arkmanager leaves the cluster directory out of every backup unless it is
+# called with --cluster, and including it costs time and backup space per
+# instance - therefore opt-in
+function resolve_cluster_backup_args() {
+  CLUSTER_BACKUP_ARGS=()
+
+  [[ "${BACKUP_CLUSTER}" == "true" ]] || return 0
+
+  if [[ -z "${CLUSTER_ID}" ]]; then
+    echo "WARNING: BACKUP_CLUSTER has no effect because CLUSTER_ID is not set - skipping the cluster data"
+
+    return 0
+  fi
+
+  CLUSTER_BACKUP_ARGS=(--cluster)
+  echo "WARNING: BACKUP_CLUSTER is 'true' - backups now also contain /cluster."
+  echo "         With sub instances every instance tarball carries its own copy,"
+  echo "         and arkmanager prunes ${ARK_SERVER_VOLUME}/backup down to"
+  echo "         arkMaxBackupSizeMB (500 by default) after every single instance"
+  echo "         backup. Raise the value in ${ARK_TOOLS_DIR}/arkmanager.cfg first,"
+  echo "         otherwise a backup run can delete your whole backup history."
+}
+
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
 # variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
 # arkmanager instance name - restrict keys to a safe charset and fail loudly
@@ -679,6 +712,7 @@ trap '[ -z "${STAGED_CONFIG}" ] || rm -f "${STAGED_CONFIG}"; exit 143' TERM INT
 
 parse_sub_instance_keys
 assert_valid_sub_instance_ports
+resolve_cluster_backup_args
 assert_valid_max_backup_size
 assert_valid_always_restart_on_crash
 
