@@ -3,7 +3,7 @@
 load helper
 
 setup() {
-  load_docker_entrypoint
+  load_cron_schedule
 }
 
 accepts() {

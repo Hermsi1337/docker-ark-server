@@ -43,6 +43,19 @@ load_docker_entrypoint() {
   source "${REPO_ROOT}/bin/docker-entrypoint.sh"
 }
 
+# The schedule parser stands on its own, so the tests for it source the file
+# itself instead of the entrypoint that uses it.
+load_cron_schedule() {
+  export REPO_ROOT="${BATS_TEST_DIRNAME}/.."
+  export STUB_DIR="${BATS_TEST_DIRNAME}/stubs"
+  export PATH="${STUB_DIR}:${PATH}"
+  export STUB_LOG="${BATS_TEST_TMPDIR}/stub-calls.log"
+
+  : > "${STUB_LOG}"
+
+  source "${REPO_ROOT}/bin/cron-schedule.sh"
+}
+
 # A crontab in the volume, template plus a job the user added by hand.
 write_user_crontab() {
   cp "${TEMPLATE_DIRECTORY}/crontab" "${ARK_SERVER_VOLUME}/crontab"

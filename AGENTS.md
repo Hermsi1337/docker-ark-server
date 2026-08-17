@@ -35,6 +35,7 @@ downstream compose files and scripts.
 |---|---|
 | `Dockerfile` | Image build; installs arkmanager via upstream `netinstall.sh` |
 | `bin/docker-entrypoint.sh` | Container entrypoint (root: setup, cron, drops to steam user) |
+| `bin/cron-schedule.sh` | Cron schedule validation, sourced by the entrypoint (library, never run directly) |
 | `bin/steam-entrypoint.sh` | Server bootstrap/run as the `steam` user |
 | `bin/healthcheck.sh` | Container `HEALTHCHECK` (root: drops to the steam user, checks every managed instance) |
 | `conf.d/` | Templates copied into the image (`arkmanager.cfg`, `arkmanager-user.cfg`, `crontab`) |
@@ -156,6 +157,13 @@ downstream compose files and scripts.
   guard is function definitions, everything below it is the startup sequence.
   The test suite sources the scripts to get at the functions, so new startup
   code goes below the guard and stays in the same order.
+- **The root entrypoint stays readable as a sequence.** It runs as root and
+  sets up the volume, ownership and cron before dropping privileges, so
+  self-contained logic belongs in a library next to it (`bin/cron-schedule.sh`
+  is the first one), sourced via
+  `source "$(dirname "${BASH_SOURCE[0]}")/<file>"`. That path works both in
+  the repository (`bin/`) and in the image, where the existing `COPY bin/ /`
+  puts the files at `/`. No extra `COPY` line, and no absolute path.
 - **Function halves stay bash 3.2 compatible.** They are parsed on every
   source, including on the macOS bash contributors run `bats tests` with, so
   no `${var,,}`, no associative arrays. The startup halves are never parsed
@@ -176,9 +184,10 @@ downstream compose files and scripts.
   setup, the cluster config guard, the Discord config migration and its
   hardcoded webhook warning, the disk space check, the appended
   arkmanager.cfg blocks, the backup budget and crash restart validation, the
-  `running-instances` state file the healthcheck reads, the cron schedule
-  validation and the generated crontab block). It never installs a server,
-  arkmanager and steamcmd are stubbed in `tests/stubs`.
+  `running-instances` state file the healthcheck reads, the generated crontab
+  block). `tests/cron_schedule.bats` sources `bin/cron-schedule.sh` directly
+  rather than the entrypoint. It never installs a server, arkmanager and
+  steamcmd are stubbed in `tests/stubs`.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
   failing non-final `[[ ... ]]` does not fail the test, so those assertions
