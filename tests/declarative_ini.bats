@@ -106,6 +106,29 @@ archives_of() {
   assert_contains "$output" "may not read it"
 }
 
+@test "an empty file is refused before it can wipe the config" {
+  : > "${MOUNTED}/Game.ini"
+  ARK_GAME_INI_FILE="${MOUNTED}/Game.ini"
+
+  run assert_ini_files_are_usable
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "it is empty"
+  assert_contains "$output" "come up on vanilla defaults"
+}
+
+@test "one file for both variables is refused" {
+  echo "shared" > "${MOUNTED}/both.ini"
+  ARK_GAME_INI_FILE="${MOUNTED}/both.ini"
+  ARK_GAME_USER_SETTINGS_INI_FILE="${MOUNTED}/both.ini"
+
+  run assert_ini_files_are_usable
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "both name"
+  assert_contains "$output" "Point them at separate files"
+}
+
 @test "two instances naming different files are refused" {
   echo "main" > "${MOUNTED}/main.ini"
   echo "fjordur" > "${MOUNTED}/fjordur.ini"
@@ -224,6 +247,101 @@ archives_of() {
 
   [ "$(cat "${CONFIG}/Game.ini")" = "declared" ]
   [ -w "${CONFIG}/Game.ini" ]
+}
+
+@test "the read-only repair also fires when the content already matches" {
+  echo "declared" > "${MOUNTED}/Game.ini"
+  cp "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini"
+  chmod 444 "${CONFIG}/Game.ini"
+
+  apply_ini_file "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini" main
+
+  [ -w "${CONFIG}/Game.ini" ]
+  [ -z "$(archives_of "${CONFIG}/Game.ini")" ]
+}
+
+@test "a source that vanished after validation leaves the config alone" {
+  echo "declared" > "${MOUNTED}/Game.ini"
+  echo "live" > "${CONFIG}/Game.ini"
+  ARK_GAME_INI_FILE="${MOUNTED}/Game.ini"
+
+  assert_ini_files_are_usable
+  rm "${MOUNTED}/Game.ini"
+  run apply_ini_file "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini" main
+
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "nothing exists at that path"
+  [ "$(cat "${CONFIG}/Game.ini")" = "live" ]
+  [ -z "$(archives_of "${CONFIG}/Game.ini")" ]
+}
+
+@test "a source truncated after validation leaves the config alone" {
+  echo "declared" > "${MOUNTED}/Game.ini"
+  echo "live" > "${CONFIG}/Game.ini"
+  ARK_GAME_INI_FILE="${MOUNTED}/Game.ini"
+
+  assert_ini_files_are_usable
+  : > "${MOUNTED}/Game.ini"
+  run apply_ini_file "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini" main
+
+  [ "$status" -eq 1 ]
+  [ "$(cat "${CONFIG}/Game.ini")" = "live" ]
+}
+
+@test "a config directory it cannot write to fails before the archive" {
+  if [ "$(id -u)" -eq 0 ]; then
+    skip "root writes everywhere, so the staging write cannot fail"
+  fi
+
+  echo "declared" > "${MOUNTED}/Game.ini"
+  echo "live" > "${CONFIG}/Game.ini"
+  chmod 555 "${CONFIG}"
+
+  run apply_ini_file "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini" main
+
+  chmod 755 "${CONFIG}"
+  [ "$status" -eq 1 ]
+  assert_contains "$output" "The live config was left untouched"
+  [ "$(cat "${CONFIG}/Game.ini")" = "live" ]
+  [ -z "$(archives_of "${CONFIG}/Game.ini")" ]
+}
+
+@test "a staged copy left by a killed start is cleared" {
+  echo "declared" > "${MOUNTED}/Game.ini"
+  echo "live" > "${CONFIG}/Game.ini"
+  echo "half written" > "${CONFIG}/Game.ini.staged.4242"
+
+  apply_ini_file "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini" main
+
+  run find "${CONFIG}" -name '*.staged.*'
+  [ -z "$output" ]
+  [ "$(cat "${CONFIG}/Game.ini")" = "declared" ]
+}
+
+@test "the staging cleanup only touches its own destination" {
+  echo "declared" > "${MOUNTED}/Game.ini"
+  echo "live" > "${CONFIG}/Game.ini"
+  echo "mine" > "${CONFIG}/Game.ini.staged.4242"
+  echo "the other ini" > "${CONFIG}/GameUserSettings.ini.staged.4242"
+  echo "an archive" > "${CONFIG}/Game.ini.bak.1700000000"
+  echo "a config helper file" > "${CONFIG}/arkmanager.cfg.aB3xY9"
+
+  apply_ini_file "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini" main
+
+  [ ! -e "${CONFIG}/Game.ini.staged.4242" ]
+  [ "$(cat "${CONFIG}/GameUserSettings.ini.staged.4242")" = "the other ini" ]
+  [ "$(cat "${CONFIG}/Game.ini.bak.1700000000")" = "an archive" ]
+  [ "$(cat "${CONFIG}/arkmanager.cfg.aB3xY9")" = "a config helper file" ]
+}
+
+@test "no staging leftovers once the config is applied" {
+  echo "declared" > "${MOUNTED}/Game.ini"
+  echo "live" > "${CONFIG}/Game.ini"
+
+  apply_ini_file "${MOUNTED}/Game.ini" "${CONFIG}/Game.ini" main
+
+  run find "${CONFIG}" -name '*.staged.*'
+  [ -z "$output" ]
 }
 
 @test "applies the config without calling arkmanager or steamcmd" {

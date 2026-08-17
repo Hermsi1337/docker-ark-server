@@ -120,10 +120,19 @@ function assert_ini_source_usable() {
     echo "       Fix the file permissions, or set PUID/PGID to match its owner."
     exit 1
   fi
+
+  if [[ ! -s "${source_file}" ]]; then
+    echo "${complaint} it is empty."
+    echo "       An empty file would replace the whole config with nothing and the server would"
+    echo "       come up on vanilla defaults. If you created it to satisfy a bind mount, put a"
+    echo "       complete INI in it, or drop both the mount and the variable."
+    exit 1
+  fi
 }
 
 function assert_ini_files_are_usable() {
   local instance var_name source_file claimed_file claimed_by
+  local settings_file="" game_file=""
 
   for var_name in ARK_GAME_USER_SETTINGS_INI_FILE ARK_GAME_INI_FILE; do
     claimed_file=""
@@ -146,23 +155,63 @@ function assert_ini_files_are_usable() {
       claimed_file="${source_file}"
       claimed_by="${instance}"
     done
+
+    if [[ "${var_name}" == ARK_GAME_INI_FILE ]]; then
+      game_file="${claimed_file}"
+    else
+      settings_file="${claimed_file}"
+    fi
   done
+
+  if [[ -n "${game_file}" ]] && [[ "${game_file}" == "${settings_file}" ]]; then
+    echo "ERROR: ARK_GAME_INI_FILE and ARK_GAME_USER_SETTINGS_INI_FILE both name '${game_file}'."
+    echo "       Game.ini and GameUserSettings.ini hold different sections, so one of the two"
+    echo "       would end up with the wrong content. Point them at separate files."
+    exit 1
+  fi
 }
 
 function apply_ini_file() {
   local source_file="${1}"
   local destination="${2}"
   local instance="${3}"
-  local stamp backup
+  local stamp backup staged
   local -i counter=1
 
   [[ -n "${source_file}" ]] || return 0
+
+  # the paths were validated before the install, which can be a long time and a
+  # dropped network mount ago - a source that went away must not cost the live
+  # config
+  assert_ini_source_usable "${source_file}" "${instance}"
+
+  mkdir -p "$(dirname "${destination}")"
+
+  # a start killed between staging and the write leaves its staged copy behind,
+  # and the stop handler that is already installed at this point does not know
+  # about it - clear it here instead of growing the trap
+  rm -f "${destination}".staged.*
+
+  # a config left read-only by an older start would fail the write below, and
+  # ARK could not write its own config back either
+  if [[ -f "${destination}" ]] && [[ ! -w "${destination}" ]]; then
+    chmod 644 "${destination}"
+  fi
 
   if cmp -s "${source_file}" "${destination}"; then
     return 0
   fi
 
-  mkdir -p "$(dirname "${destination}")"
+  # read the source out in full before anything is archived or truncated, so a
+  # source that disappears mid-copy cannot leave the live config half written
+  staged="${destination}.staged.$$"
+  if ! cat "${source_file}" > "${staged}"; then
+    rm -f "${staged}"
+    echo "ERROR: could not stage '${source_file}' next to ${destination} for instance ${instance}."
+    echo "       The live config was left untouched. Check that $(id -un) can write to"
+    echo "       $(dirname "${destination}")."
+    exit 1
+  fi
 
   if [[ -f "${destination}" ]]; then
     stamp="$(date +%s)"
@@ -175,13 +224,13 @@ function apply_ini_file() {
     # second link to the very file the copy below overwrites
     cp "${destination}" "${backup}"
     echo "...kept the previous ${destination} as ${backup}"
-    [[ -w "${destination}" ]] || chmod u+w "${destination}"
   fi
 
   # redirection, not cp: writing through a symlinked destination is what we
   # want, and whether cp does that or replaces the link differs between GNU
   # coreutils and busybox
-  cat "${source_file}" > "${destination}"
+  cat "${staged}" > "${destination}"
+  rm -f "${staged}"
   # the source mode is not the server's business - a read-only mount would
   # leave ARK unable to write its config back
   chmod 644 "${destination}"
@@ -542,17 +591,17 @@ function get_all_mod_ids() {
   [[ ${#collected[@]} -eq 0 ]] || printf '%s\n' "${collected[@]}" | sort -u
 }
 
-# Game.ini and GameUserSettings.ini in the volume root are convenience
-# symlinks to the real config files. Users regularly replace them with
-# regular files by accident (e.g. via SFTP upload) - in that case adopt the
-# uploaded content as the real config and re-create the symlink, instead of
-# dying on 'ln: File exists'.
 # relative on purpose: it doubles as the target of the volume root symlinks,
 # which have to keep working when the volume is mounted somewhere else
 function config_dir() {
   printf '%s' "./server/ShooterGame/Saved/Config/LinuxServer"
 }
 
+# Game.ini and GameUserSettings.ini in the volume root are convenience
+# symlinks to the real config files. Users regularly replace them with
+# regular files by accident (e.g. via SFTP upload) - in that case adopt the
+# uploaded content as the real config and re-create the symlink, instead of
+# dying on 'ln: File exists'.
 function heal_config_symlinks() {
   local CONFIG_DIR
   CONFIG_DIR="$(config_dir)"

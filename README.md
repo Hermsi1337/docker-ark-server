@@ -331,12 +331,18 @@ services:
       ARK_GAME_USER_SETTINGS_INI_FILE: /config/GameUserSettings.ini
 ```
 
-**Mount a complete INI file, not a snippet.** ARK treats a nearly empty config
-as one to regenerate: a file with only a `[ServerSettings]` header and two keys
-is rewritten from the game's own defaults within seconds of startup, and your
-values are gone without a word in the log. That looks exactly like this feature
-being broken, but the copy did happen. Let the server run once, copy
-`<your-volume>/GameUserSettings.ini` out, edit that file and mount it back.
+**Mount a complete INI file, not a snippet.** Observed on a live server: a
+mounted `GameUserSettings.ini` of three lines (a `[ServerSettings]` header and
+two keys) was replaced by a full 4242 byte default config within 25 seconds of
+the server starting, and both values were gone without a word in the log. The
+same value inside a complete 230 line file survived the startup, ARK's own
+rewrite and a graceful shutdown. So let the server run once, copy
+`<your-volume>/GameUserSettings.ini` out, edit that file and mount it back. A
+partial file looks exactly like this feature being broken, but the copy did
+happen.
+
+An empty file is refused outright on start, because replacing your config with
+nothing would silently put the server on vanilla defaults.
 
 The trade-off is the point of the feature: your file replaces whatever is in the
 save directory. Settings an admin changes in game, and everything the server
@@ -366,8 +372,16 @@ a few KB each, clean out the ones you do not need.
 
 If a named file cannot be used, the container stops with an error that says what
 was found (missing, a directory because the host side of your bind mount does
-not exist, or not readable) instead of quietly starting on a stale config. That
-check runs before the ~25GB install, so a typo does not cost you a download.
+not exist, empty, or not readable) instead of quietly starting on a stale
+config. That check runs before the ~25GB install, so a typo does not cost you a
+download, and it runs again right before the copy, so a file that disappeared
+in the meantime (a network mount dropping during a long install) costs you an
+aborted start and not your config. The copy itself is staged next to the
+destination first, so the live config is never left half written.
+
+Pointing both variables at the same file is refused too, `Game.ini` and
+`GameUserSettings.ini` hold different sections and one of them would end up
+wrong.
 
 Sub instances inherit the main value and can name their own file with
 `SUB_<KEY>_ARK_GAME_INI_FILE` / `SUB_<KEY>_ARK_GAME_USER_SETTINGS_INI_FILE`. All
