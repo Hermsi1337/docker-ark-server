@@ -6,6 +6,11 @@ set -e
 
 mkdir -p "${ARK_SERVER_VOLUME}" "/cluster"
 
+# drop healthcheck state from a previous container before anything slow runs:
+# the chown below can take many minutes on a 25GB volume, and until the file is
+# gone the healthcheck would judge this container by the last run's instances
+rm -f "${ARK_SERVER_VOLUME}/running-instances" "${ARK_SERVER_VOLUME}/.healthcheck-update-grace"
+
 # Optionally remap the steam user to a custom UID/GID, e.g. to match the
 # owner of a bind mount on NAS systems (Synology, UGREEN, ...)
 if [[ -n "${PUID}${PGID}" ]]; then

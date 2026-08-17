@@ -31,6 +31,9 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             ALWAYS_RESTART_ON_CRASH="" \
             SKIP_DISK_CHECK="false" \
             DISCORD_WEBHOOK_URL="" \
+            DISABLE_HEALTHCHECK="false" \
+            HEALTHCHECK_REQUIRE_ALL_INSTANCES="false" \
+            HEALTHCHECK_UPDATE_GRACE_MINUTES="30" \
             CLUSTER_ID="" \
             SUB_INSTANCE_KEYS="" \
             ARK_TOOLS_VERSION="${ARK_TOOLS_VERSION}" \
@@ -88,7 +91,7 @@ EXPOSE      ${GAME_CLIENT_PORT}/udp ${UDP_SOCKET_PORT}/udp ${SERVER_LIST_PORT}/u
 VOLUME      ["${ARK_SERVER_VOLUME}"]
 WORKDIR     ${ARK_SERVER_VOLUME}
 
-HEALTHCHECK --interval=1m --timeout=30s --start-period=5m --retries=5 \
+HEALTHCHECK --interval=1m --timeout=45s --start-period=6h --retries=5 \
             CMD ["/healthcheck.sh"]
 
 ENTRYPOINT  ["/docker-entrypoint.sh"]

@@ -35,10 +35,6 @@ function stop_server() {
 
   echo "Caught stop signal, gracefully stopping all ARK server instances..."
 
-  # the instances go down on purpose - do not let the healthcheck flag the
-  # world save, which may well take minutes, as a failure
-  rm -f "${RUNNING_INSTANCES_FILE}"
-
   if [[ "${WARN_ON_STOP}" == "true" ]]; then
     ${ARKMANAGER} broadcast @all "Server is shutting down" || true
   fi
@@ -632,6 +628,21 @@ function heal_config_symlinks() {
   done
 }
 
+# the healthcheck expects every instance listed in this file to have a running
+# server process, so it is only written once they are about to start. The temp
+# file matters: a truncated list (out of disk) would tell the healthcheck that
+# fewer instances are supposed to run than really are
+function write_running_instances() {
+  local TARGET="${ARK_SERVER_VOLUME}/running-instances"
+
+  if ! { printf '%s\n' "${@}" > "${TARGET}.tmp" && mv -f "${TARGET}.tmp" "${TARGET}"; }; then
+    rm -f "${TARGET}.tmp"
+    echo "WARNING: could not write ${TARGET}, the container will report unhealthy..."
+
+    return 1
+  fi
+}
+
 # everything below is the startup sequence; sourcing this script (the test
 # suite does) only defines the functions above
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
@@ -707,12 +718,6 @@ ARKMANAGER="$(command -v arkmanager)" || true
 )
 
 cd "${ARK_SERVER_VOLUME}"
-
-# the healthcheck expects every instance listed in this file to have a running
-# server process - drop it for the whole bootstrap phase (install, mod
-# download, update on start), which may legitimately take hours
-RUNNING_INSTANCES_FILE="${ARK_SERVER_VOLUME}/running-instances"
-rm -f "${RUNNING_INSTANCES_FILE}"
 
 # export the container environment for cron jobs (minus shell bookkeeping):
 # the bundled crontab loads it via BASH_ENV so that arkmanager and its
@@ -812,9 +817,13 @@ ARK_RUN_PIDS=()
 trap stop_server TERM INT
 
 # remove state files left behind if a previous shutdown did not complete in
-# time (the glob also covers upstream's per-instance .autorestart-<name>)
+# time (the glob also covers upstream's per-instance .autorestart-<name>).
+# The update lock has to go too: no update can be running this early, and once
+# the kernel hands its recorded pid to another process, arkmanager aborts every
+# start with "An update is currently in progress"
 rm -f "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".*.pid \
-      "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".autorestart*
+      "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".autorestart* \
+      "${ARK_SERVER_VOLUME}/server/ShooterGame/Saved/".ark-update.lock*
 
 # arkmanager only copies arkGameUserSettingsIniFile/arkGameIniFile over the
 # save dir config in its 'start' path, and we run 'run' to stay PID 1 - so do
@@ -828,8 +837,7 @@ for INSTANCE in "${INSTANCES[@]}"; do
     "${CONFIG_DIR}/Game.ini" "${INSTANCE}"
 done
 
-printf '%s\n' "${INSTANCES[@]}" > "${RUNNING_INSTANCES_FILE}" ||
-  echo "WARNING: could not write ${RUNNING_INSTANCES_FILE}, the container healthcheck will always report healthy..."
+write_running_instances "${INSTANCES[@]}" || true
 
 for INSTANCE in "${INSTANCES[@]}"; do
   echo "Running instance ${INSTANCE} ..."

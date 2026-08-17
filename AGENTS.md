@@ -137,6 +137,14 @@ downstream compose files and scripts.
   `RUN`.** The `RUN` pipes `netinstall.sh` into `bash`. Without `pipefail` a
   failed download exits 0, the build happily continues and the image ships
   without arkmanager.
+- **The healthcheck fails while the container bootstraps.** `bin/healthcheck.sh`
+  must never report healthy when it cannot tell what is running (no
+  `/app/running-instances`, empty or truncated file). A fresh container
+  downloads ~25GB, and `--start-period=6h` is what keeps that in `starting`
+  instead of `unhealthy`. Reporting healthy there would unblock
+  `depends_on: condition: service_healthy` and Swarm rollouts before the server
+  exists. It is also judged per container, not per instance: one dead map must
+  not restart the container serving the other two.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 - **`bin/steam-entrypoint.sh` is sourceable.** Everything above the
@@ -153,9 +161,9 @@ downstream compose files and scripts.
   healing, the declarative INI files, mod id collection, install detection,
   the directory setup, the cluster config guard, the Discord config migration
   and its hardcoded webhook warning, the disk space check, the appended
-  arkmanager.cfg blocks and the backup budget and crash restart validation).
-  It never installs a server, arkmanager and steamcmd are stubbed in
-  `tests/stubs`.
+  arkmanager.cfg blocks, the backup budget and crash restart validation, the
+  `running-instances` state file the healthcheck reads). It never installs a
+  server, arkmanager and steamcmd are stubbed in `tests/stubs`.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
   failing non-final `[[ ... ]]` does not fail the test, so those assertions
