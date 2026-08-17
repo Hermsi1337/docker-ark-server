@@ -174,7 +174,7 @@ Everything the server needs lives in the volume mounted at `/app`
 | `/app/server` | The ARK dedicated server installation |
 | `/app/backup` | Backups created by `arkmanager backup` |
 | `/app/log` | arkmanager log files |
-| `/app/staging` | Staging directory for server updates |
+| `/app/staging` | Staging directory arkmanager downloads updates into, see [staged updates](#staged-updates) |
 | `/app/crontab` | Cron definitions loaded at container start |
 | `/app/environment` | Auto-generated on every start: container environment for cron jobs (contains credentials, mode 600) |
 | `/app/arkmanager` | Persisted arkmanager configuration (global + instance). `instances/sub.*.cfg` are auto-regenerated on every start |
@@ -268,6 +268,59 @@ The crontab is loaded when the container starts, so apply your changes with:
 ```bash
 docker restart ark-server
 ```
+
+#### Staged updates
+
+The single update job above already keeps players online for the download. This
+image points arkmanager's `arkStagingDir` at `/app/staging`, so an update first
+pulls the new build (and the mod downloads) into staging with the server still
+running, and only then stops it, swaps the files and starts again. The stop is
+short because `ShooterGame`, `Engine` and `linux64` are hardlinked out of
+staging and only `steamapps` is copied for real. What is left inside the
+downtime window is unpacking updated mods, `--update-mods` does that after the
+stop.
+
+So splitting the job into `--downloadonly` and `--no-download` does not move the
+download out of the downtime window, that already happens. It buys exactly one
+thing: you pick when the restart lands instead of taking it whenever the cron
+job happens to find an update. If you don't care about that, keep the single job
+and skip the rest of this section.
+
+```bash
+# every hour: check for a new build and pull it into staging, nothing stops
+0 * * * * arkmanager update @all --downloadonly --update-mods >> /app/log/crontab.log 2>&1
+# 6am: apply it, but only if something new really is staged
+0 6 * * * cmp -s /app/server/steamapps/appmanifest_376030.acf /app/staging/steamapps/appmanifest_376030.acf || arkmanager update @all --no-download --update-mods --warn >> /app/log/crontab.log 2>&1
+```
+
+That `cmp` guard is not decoration. The apply job never compares the staged
+build with the installed one, it only asks Steam whether an update exists, and
+staging is never cleared. So whenever staging holds the build you are already
+running (the download failed, or the new build shipped after the last download
+ran), the unguarded job warns players, stops, copies identical files back,
+starts again and leaves you on the old build until the next cycle. The guard
+turns that into a no-op. It has two blind spots: a mod-only update slips past
+it, and before the first download job has ever run there is no staged manifest
+at all, which counts as different. Downloading hourly instead of once keeps
+staging fresh enough that the 6am window usually has something to apply. And if
+a newer build appears between the last download and the apply, you get the one
+you staged and the next cycle catches up.
+
+About the countdown. `--warn` counts down `arkwarnminutes` from
+`arkmanager.cfg` (60 here), but `arkprecisewarn` is `false`, so with nobody
+online arkmanager broadcasts "Nobody is connected" and restarts right away.
+With `@all` on a multi-map setup the instances are handled one after another,
+so every map gets its own countdown and the last one finishes much later than
+the first. An apply job that finds no pending update does nothing at all, no
+stop and no start.
+
+Keep some disk headroom for staging. It is seeded once by hardlinking the
+installed server, so it starts out nearly free, but every update needs room for
+the files it replaces (a few GB in practice). If `/app/staging` and
+`/app/server` end up on different filesystems, arkmanager falls back to rsync,
+which means a full second copy of the server and a slow apply, so keep both in
+the same volume. The entrypoint's disk check only guards the very first install
+(25 GB) and never runs again, nothing warns you when the volume fills up later.
 
 ### Configure a Steam login session
 
