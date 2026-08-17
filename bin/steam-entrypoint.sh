@@ -299,14 +299,14 @@ function needs_install() {
 
     # arkmanager rewrites the appmanifest every time it runs app_update, e.g.
     # from a cron 'arkmanager update'
-    if [[ "$(read_pin_field buildid)" != "$(installed_steam_buildid)" ]]; then
+    if [[ "$(read_pin_field buildid_at_pin)" != "$(installed_steam_buildid)" ]]; then
       echo "The Steam build id changed since this server was pinned - something updated it, re-applying the pin ..."
       return 0
     fi
 
     # a repair that rewrites the binaries without touching Steam's bookkeeping
     # leaves the build id alone, so compare the binary itself as well
-    if [[ "$(read_pin_field binary)" != "$(server_binary_fingerprint)" ]]; then
+    if [[ "$(read_pin_field binary_at_pin)" != "$(server_binary_fingerprint)" ]]; then
       echo "The server binary changed since this server was pinned - something replaced it, re-applying the pin ..."
       return 0
     fi
@@ -506,8 +506,11 @@ function verified_depot_path() {
 
 function explain_steamcmd_failure() {
   if grep -qi 'No subscription\|missing license' "${PINNED_INSTALL_LOG}"; then
-    echo "       steamcmd reports no licence for depot ${ARK_CONTENT_DEPOT_ID}, so the account"
-    echo "       '${STEAM_LOGIN}' cannot download it. Use an account that owns ARK: Survival Evolved."
+    echo "       steamcmd reports no licence for depot ${ARK_CONTENT_DEPOT_ID}. Either the Steam"
+    echo "       session for '${STEAM_LOGIN}' has expired, which is the common case on a server"
+    echo "       that ran fine yesterday, or that account does not own ARK: Survival Evolved."
+    echo "       Re-create the session with deploy/steam-login.sh first (see the README), and"
+    echo "       only look for another account if the fresh session fails the same way."
 
     return
   fi
@@ -525,14 +528,47 @@ function explain_steamcmd_failure() {
   echo "       happens for manifests that only ever existed on a beta branch."
 }
 
+function staging_marker_of() {
+  local -r DEPOT_DIR="${1}"
+
+  # derive the depot id from the directory so that clearing one depot's staging
+  # cannot remove another depot's marker - they share a parent directory
+  echo "$(dirname "${DEPOT_DIR}")/.ark_requested_manifest_${DEPOT_DIR##*/depot_}"
+}
+
 function report_kept_staging() {
   local DEPOT_DIR
 
   DEPOT_DIR="$(find_downloaded_depot "${ARK_CONTENT_DEPOT_ID}")"
   [[ -n "${DEPOT_DIR}" ]] || return 0
+
+  # download_depot unpacks into content/app_<id>/depot_<id>, a path with no
+  # manifest in it, so a kept partial download is indistinguishable from one
+  # for another manifest - label it, reset_stale_content_staging reads this
+  echo "${TARGET_MANIFEST_ID}" > "$(staging_marker_of "${DEPOT_DIR}")"
+
   echo "       The partial download was kept so a restart can resume it:"
   echo "       ${DEPOT_DIR} ($(du -sh "${DEPOT_DIR}" 2>/dev/null | cut -f1) so far)."
   echo "       Delete it by hand if you would rather have the disk space back."
+}
+
+function reset_stale_content_staging() {
+  local DEPOT_DIR
+
+  DEPOT_DIR="$(find_downloaded_depot "${ARK_CONTENT_DEPOT_ID}")"
+  [[ -n "${DEPOT_DIR}" ]] || return 0
+
+  # only a download that was kept for this exact manifest may be resumed;
+  # anything else would let steamcmd write this build over another build's
+  # files and hand the mixture on as verified
+  if [[ "$(cat "$(staging_marker_of "${DEPOT_DIR}")" 2>/dev/null)" == "${TARGET_MANIFEST_ID}" ]]; then
+    echo "...resuming the staged download for manifest ${TARGET_MANIFEST_ID}"
+
+    return 0
+  fi
+
+  echo "...discarding a staged download that was not for manifest ${TARGET_MANIFEST_ID}"
+  rm -rf "${DEPOT_DIR}" "$(staging_marker_of "${DEPOT_DIR}")"
 }
 
 function remove_depot_staging() {
@@ -542,7 +578,7 @@ function remove_depot_staging() {
   DEPOT_DIR="$(find_downloaded_depot "${DEPOT_ID}")"
   [[ -n "${DEPOT_DIR}" ]] || return 0
   echo "...removing the staged download in ${DEPOT_DIR}"
-  rm -rf "${DEPOT_DIR}"
+  rm -rf "${DEPOT_DIR}" "$(staging_marker_of "${DEPOT_DIR}")"
 }
 
 function install_depot_files() {
@@ -581,6 +617,7 @@ function install_pinned_manifest() {
   echo "arkmanager cannot pass a manifest to steamcmd, so this bypasses it and calls steamcmd directly."
 
   : > "${PINNED_INSTALL_LOG}"
+  reset_stale_content_staging
   warm_steam_app_info
   steamcmd_download_depot "${ARK_REDIST_DEPOT_ID}" ""
   steamcmd_download_depot "${ARK_CONTENT_DEPOT_ID}" "${TARGET_MANIFEST_ID}"
@@ -631,11 +668,24 @@ function install_pinned_manifest() {
   REDIST_DIR="$(verified_depot_path "${ARK_REDIST_DEPOT_ID}" "")" || RESULT=$?
   if (( RESULT == 0 )); then
     install_depot_files "${REDIST_DIR}"
+  elif [[ -s "${ARK_SERVER_VOLUME}/server/linux64/steamclient.so" ]]; then
+    echo "WARNING: depot ${ARK_REDIST_DEPOT_ID} (Steamworks redistributables) did not download,"
+    echo "         keeping the copy that is already installed."
   else
-    echo "WARNING: depot ${ARK_REDIST_DEPOT_ID} (Steamworks redistributables) did not download, continuing..."
+    echo "ERROR: depot ${ARK_REDIST_DEPOT_ID} (Steamworks redistributables) did not download and"
+    echo "       server/linux64/steamclient.so is not installed either. The server cannot start"
+    echo "       without it, so this install stays unpinned and the next start retries it."
+    echo "       Its full output is in ${PINNED_INSTALL_LOG}."
+    explain_steamcmd_failure
+    exit 1
   fi
 
-  printf 'manifest=%s\nbuildid=%s\nbinary=%s\n' \
+  # Steam's own metadata still describes the build this pin replaced. Leaving
+  # it lets arkmanager and the staged-update cron examples compare a build that
+  # is not installed against the latest one and act on the difference.
+  rm -f "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_${ARK_APP_ID}.acf"
+
+  printf 'manifest=%s\nbuildid_at_pin=%s\nbinary_at_pin=%s\n' \
     "${TARGET_MANIFEST_ID}" "$(installed_steam_buildid)" "$(server_binary_fingerprint)" \
     > "${MANIFEST_PIN_FILE}"
 }
@@ -1142,11 +1192,22 @@ fi
 heal_config_symlinks
 
 if [[ -z "${TARGET_MANIFEST_ID}" ]] && [[ -f "${MANIFEST_PIN_FILE}" ]]; then
-  echo "TARGET_MANIFEST_ID is no longer set, removing the manifest pin."
+  echo "TARGET_MANIFEST_ID is no longer set, removing the manifest pin (it was $(read_pin_field manifest))."
+  echo "If you did not mean to un-pin, stop the container now: an empty TARGET_MANIFEST_ID is all"
+  echo "it takes, so a compose run without your env file lands here too."
   echo "The pinned install bypassed steamcmd's bookkeeping, so arkmanager cannot tell which build is"
   echo "on disk and would happily call it up to date. Dropping that bookkeeping forces a full"
   echo "steamcmd validate pass back to the current build, which takes a while but is the only"
   echo "way back to a server arkmanager can keep updated."
+
+  if ! backup_before_binary_swap; then
+    echo "ERROR: the backup failed, refusing to un-pin."
+    echo "       Un-pinning replaces the server binaries, and the saves were written by the"
+    echo "       pinned build - going ahead without a backup risks the world."
+    echo "       Fix the backup, or set PRE_UPDATE_BACKUP=false to un-pin without one."
+    exit 1
+  fi
+
   rm -f "${MANIFEST_PIN_FILE}" \
         "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_${ARK_APP_ID}.acf" \
         "${ARK_SERVER_VOLUME}/server/version.txt"
@@ -1187,6 +1248,11 @@ fi
 declare -a ALL_GAME_MOD_IDS=()
 mapfile -t ALL_GAME_MOD_IDS < <(get_all_mod_ids)
 if [[ ${#ALL_GAME_MOD_IDS[@]} -gt 0 ]]; then
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    echo "WARNING: mods cannot be pinned. The Workshop only ever serves their current version,"
+    echo "         which was built against the current server build, not the pinned one."
+  fi
+
   echo "Installing mods: '${ALL_GAME_MOD_IDS[*]}' ..."
 
   for MOD_ID in "${ALL_GAME_MOD_IDS[@]}"; do

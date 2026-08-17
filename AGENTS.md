@@ -159,9 +159,26 @@ downstream compose files and scripts.
   - Bypassing `app_update` means no `steamapps/appmanifest_376030.acf` is
     written and the depot ships no `version.txt`, so none of arkmanager's
     version bookkeeping describes a pinned install. `server/.ark_manifest_pin`
-    is the image's own record (pinned manifest, Steam build id and a `cksum` of
-    `ShooterGameServer` at pin time) and the only thing that proves a pinned
-    install completed.
+    is the image's own record (`manifest`, `buildid_at_pin` and
+    `binary_at_pin`, a `cksum` of `ShooterGameServer`) and the only thing that
+    proves a pinned install completed. The `_at_pin` suffixes are deliberate:
+    those two fields say nothing has replaced the server since the pin, they do
+    not identify which build is on disk.
+  - **The pinned install deletes `appmanifest_376030.acf`.** Steam's metadata
+    would otherwise keep describing the build the pin replaced, and the staged
+    update cron examples in the README compare exactly that file. Every update
+    job in `conf.d/crontab` and the README carries a
+    `[ -z "${TARGET_MANIFEST_ID}" ]` guard for the same reason; an update job
+    undoes the pin and the drift check only catches it at the next restart.
+  - **A missing redistributable depot is fatal** unless
+    `server/linux64/steamclient.so` is already installed. The server cannot
+    start without it, and writing the pin anyway would make every later start
+    report "Already installed" over an install that crash loops.
+  - **Kept staging is labelled with the manifest it was for.**
+    `download_depot` unpacks into `content/app_376030/depot_376031`, a path
+    with no manifest in it, so a partial download kept for one manifest would
+    otherwise be written over by the next one and handed on as verified. The
+    marker sits next to the depot directory, never inside it.
   - **Delete the pin file before the first copy, never only after the last
     one.** Between the two copies the server directory holds a mix of two
     builds; a pin file that survives an aborted swap makes the next start
@@ -215,8 +232,10 @@ downstream compose files and scripts.
   and its hardcoded webhook warning, the disk space check, the appended
   arkmanager.cfg blocks, the backup budget and crash restart validation, the
   `running-instances` state file the healthcheck reads, the manifest pin
-  bookkeeping). It never installs a server, arkmanager and steamcmd are
-  stubbed in `tests/stubs`.
+  bookkeeping, and `install_pinned_manifest` end to end against a steamcmd stub
+  that mimics the real one). It never installs a server, arkmanager and
+  steamcmd are stubbed in `tests/stubs`; `tests/pinned_install.bats` writes its
+  own steamcmd stub because the code calls it by absolute path.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
   failing non-final `[[ ... ]]` does not fail the test, so those assertions

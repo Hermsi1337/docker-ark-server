@@ -537,12 +537,18 @@ vim "${HOME}/ark-server/crontab"
 Add your desired cronjobs with valid syntax (they run as the `steam` user):
 
 ```bash
-0 4 * * * arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
+0 4 * * * [ -z "${TARGET_MANIFEST_ID}" ] && arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
 0 0 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
 ```
 
 (`@all` targets every instance — identical to `@main` on a single-map server
 and required on [multi-map servers](#cluster-and-multi-map-support).)
+
+The `[ -z "${TARGET_MANIFEST_ID}" ]` guard keeps the job away from a server
+pinned with [`TARGET_MANIFEST_ID`](#pin-the-server-to-a-steam-manifest-downgrade).
+arkmanager only ever updates to the newest build, so without the guard the job
+undoes the pin and puts the build you are escaping back. Cron jobs read the
+same exported environment as the server, so the variable is there.
 
 The container environment is exported to `/app/environment` on every start and
 loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
@@ -580,9 +586,9 @@ and skip the rest of this section.
 
 ```bash
 # every hour: check for a new build and pull it into staging, nothing stops
-0 * * * * arkmanager update @all --downloadonly --update-mods >> /app/log/crontab.log 2>&1
+0 * * * * [ -z "${TARGET_MANIFEST_ID}" ] && arkmanager update @all --downloadonly --update-mods >> /app/log/crontab.log 2>&1
 # 6am: apply it, but only if something new really is staged
-0 6 * * * cmp -s /app/server/steamapps/appmanifest_376030.acf /app/staging/steamapps/appmanifest_376030.acf || arkmanager update @all --no-download --update-mods --warn >> /app/log/crontab.log 2>&1
+0 6 * * * [ -z "${TARGET_MANIFEST_ID}" ] && ! cmp -s /app/server/steamapps/appmanifest_376030.acf /app/staging/steamapps/appmanifest_376030.acf && arkmanager update @all --no-download --update-mods --warn >> /app/log/crontab.log 2>&1
 ```
 
 That `cmp` guard is not decoration. The apply job never compares the staged
@@ -597,6 +603,11 @@ at all, which counts as different. Downloading hourly instead of once keeps
 staging fresh enough that the 6am window usually has something to apply. And if
 a newer build appears between the last download and the apply, you get the one
 you staged and the next cycle catches up.
+
+The `cmp` guard says nothing about a pinned server, which is why both jobs
+carry the `TARGET_MANIFEST_ID` guard as well. A pinned install has no
+`appmanifest_376030.acf` at all, so the comparison differs from the first
+staged download onwards and the apply job would swap in unpinned binaries.
 
 About the countdown. `--warn` counts down `arkwarnminutes` from
 `arkmanager.cfg` (60 here), but `arkprecisewarn` is `false`, so with nobody
@@ -708,21 +719,35 @@ the one that broke.
 * Updates are off. `UPDATE_ON_START` is ignored, and so is arkmanager's own
   update-before-start (`arkmanager start`/`restart` from a cron job). The
   container log says so on every start.
-* Mods are frozen too. A mod built for the current build usually does not load
-  on an older one, so freezing them next to the binaries is the point.
+* **Mods are not pinned, and cannot be.** The Workshop only ever serves a mod's
+  current version, and there is no manifest to ask for. So a pinned server with
+  `GAME_MOD_IDS` or `SERVER_MAP_MOD_ID` installs mods built against the current
+  server build, next to older binaries. Mods that were already installed are
+  left alone (the install loop skips them), which is the closest thing to
+  freezing you get. If a mod refuses to load on the pinned build, there is no
+  setting here that helps.
 * `BETA` is ignored. A manifest id already identifies exactly one build of one
   branch.
-* An explicit `arkmanager update` (for example from one of the
-  [crontab](#add-cronjobs) examples) still updates and undoes the pin. Comment
-  those jobs out while you are pinned. If one runs anyway, the next start
-  notices, says so, and re-applies the pin.
+* An explicit `arkmanager update` still updates and undoes the pin. Every
+  update job in the shipped [crontab](#add-cronjobs) examples is guarded with
+  `[ -z "${TARGET_MANIFEST_ID}" ]` for exactly this reason. If you wrote your
+  own job, add the same guard. A crontab created by an older version of this
+  image keeps its unguarded jobs, the template is only copied once, so check
+  `<your-volume>/crontab` before you pin.
 
-  What that check actually is: the image records the Steam build id and a
-  checksum of `ShooterGameServer` when it pins, and compares both on every
-  start. So it catches anything that replaces the server binary or Steam's
-  records. It does not checksum the other ~22GB, so a change limited to game
-  content with the binary left alone goes unnoticed. It is a tripwire for the
-  update paths that exist in this image, not a full integrity check.
+  If an update runs anyway, the next container start notices and re-applies the
+  pin. Two things to be clear about: the check only runs at startup, so an
+  unpinned server can serve players for as long as it takes you to restart it,
+  and re-applying the pin means downloading the full ~22GB again, it is not a
+  cheap repair.
+
+  What the check actually is: the image records the Steam build id and a
+  checksum of `ShooterGameServer` at the moment it pins, and compares both on
+  every start. Those two values say "nothing has replaced the server since we
+  pinned it". They do not identify which build is on disk. Anything that leaves
+  the executable byte for byte identical is invisible, including changes
+  confined to the other ~22GB of content. It is a tripwire for the update paths
+  this image has, not an integrity check.
 * A backup is taken before the server binaries are swapped, unless you set
   `PRE_UPDATE_BACKUP=false`. If the backup fails, the swap is refused: an older
   build rewrites the saves it loads on the first autosave.
@@ -738,6 +763,12 @@ the pinned install never went through Steam's own bookkeeping, arkmanager would
 otherwise believe the downgraded files are current and never update them, so
 un-pinning throws that bookkeeping away and runs a full `steamcmd` validate
 pass back to the current build. Expect one slow start.
+
+Careful: an empty `TARGET_MANIFEST_ID` is all it takes, so starting the
+container without your env file un-pins it and walks the server straight back
+to the build you were escaping. A backup is taken first (unless
+`PRE_UPDATE_BACKUP=false`) and the log says what is happening, but nothing asks
+you to confirm.
 
 **When a manifest cannot be fetched.** Two failures are worth recognising, both
 of them `steamcmd` limitations rather than something to configure away:

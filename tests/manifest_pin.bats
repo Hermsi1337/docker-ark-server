@@ -18,13 +18,21 @@ write_app_manifest() {
 }
 
 # a pinned install as install_pinned_manifest leaves it: depot files unpacked,
-# no appmanifest and no version.txt, and the image's own pin record
-install_pinned_files() {
-  mkdir -p "$(dirname "${SERVER_EXEC}")" "${SERVER_DIR}/Engine"
-  echo "pinned binary" > "${SERVER_EXEC}"
+# no version.txt, and the image's own pin record. The pin file is written out
+# literally rather than through the functions under test, so that a change to
+# the field names or to either fingerprint fails a test instead of moving with
+# it. PINNED_BINARY_CKSUM is the cksum of exactly the bytes written below.
+PINNED_BINARY="pinned binary"
+PINNED_BINARY_CKSUM="2398651004-14"
 
-  printf 'manifest=%s\nbuildid=%s\nbinary=%s\n' \
-    "${TARGET_MANIFEST_ID}" "$(installed_steam_buildid)" "$(server_binary_fingerprint)" \
+install_pinned_files() {
+  local buildid="${1:-none}"
+
+  mkdir -p "$(dirname "${SERVER_EXEC}")" "${SERVER_DIR}/Engine"
+  echo "${PINNED_BINARY}" > "${SERVER_EXEC}"
+
+  printf 'manifest=%s\nbuildid_at_pin=%s\nbinary_at_pin=%s\n' \
+    "${TARGET_MANIFEST_ID}" "${buildid}" "${PINNED_BINARY_CKSUM}" \
     > "${MANIFEST_PIN_FILE}"
 }
 
@@ -69,7 +77,7 @@ install_pinned_files() {
 
 @test "re-applies the pin when the steam build id changed" {
   write_app_manifest "111"
-  install_pinned_files
+  install_pinned_files "111"
   write_app_manifest "222"
 
   run needs_install
@@ -101,7 +109,7 @@ install_pinned_files() {
 
 @test "re-applies the pin when the server binary was replaced" {
   write_app_manifest "111"
-  install_pinned_files
+  install_pinned_files "111"
   echo "somebody else's binary" > "${SERVER_EXEC}"
 
   run needs_install
@@ -112,7 +120,7 @@ install_pinned_files() {
 }
 
 @test "an unpinned server ignores a leftover pin file" {
-  install_pinned_files
+  install_pinned_files "111"
   write_app_manifest "111"
   TARGET_MANIFEST_ID=""
 
