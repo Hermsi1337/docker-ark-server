@@ -30,7 +30,6 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             WARN_ON_STOP="true" \
             ALWAYS_RESTART_ON_CRASH="" \
             BACKUP_CRON="" \
-            UPDATE_CRON="" \
             UPDATE_WARN_MINUTES="" \
             SKIP_DISK_CHECK="false" \
             DISCORD_WEBHOOK_URL="" \

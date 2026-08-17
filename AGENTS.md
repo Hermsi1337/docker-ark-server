@@ -39,7 +39,7 @@ downstream compose files and scripts.
 | `bin/healthcheck.sh` | Container `HEALTHCHECK` (root: drops to the steam user, checks every managed instance) |
 | `conf.d/` | Templates copied into the image (`arkmanager.cfg`, `arkmanager-user.cfg`, `crontab`) |
 | `deploy/` | Example `docker-compose.yml` + `example.env` for end users |
-| `tests/` | bats suite for the pure-bash parts of `bin/steam-entrypoint.sh` |
+| `tests/` | bats suite for the pure-bash parts of both entrypoints |
 | `.github/workflows/build-and-deploy.yml` | "Build and Publish" — builds and pushes to all three registries |
 | `.github/workflows/deploy-preview.yml` | "Build PR Preview" — builds PRs, pushes `pr-<n>` for same-repo PRs |
 | `.github/workflows/update-arkmanager-pin.yml` | "Update arkmanager pin" — weekly bump PR for the `ARK_TOOLS_VERSION` default |
@@ -152,23 +152,33 @@ downstream compose files and scripts.
   signals the command but not reliably what the command forked.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
-- **`bin/steam-entrypoint.sh` is sourceable.** Everything above the
-  `BASH_SOURCE` guard is function definitions, everything below it is the
-  startup sequence. The test suite sources the script to get at the functions,
-  so new startup code goes below the guard and stays in the same order.
+- **Both entrypoints are sourceable.** Everything above the `BASH_SOURCE`
+  guard is function definitions, everything below it is the startup sequence.
+  The test suite sources the scripts to get at the functions, so new startup
+  code goes below the guard and stays in the same order.
+- **Function halves stay bash 3.2 compatible.** They are parsed on every
+  source, including on the macOS bash contributors run `bats tests` with, so
+  no `${var,,}`, no associative arrays. The startup halves are never parsed
+  when sourced and may use bash 4 syntax (they already do).
+- **No scheduled `arkmanager update`/`restart`.** In this container the
+  `arkmanager run` process is what PID 1 waits on, and both commands stop the
+  server by killing exactly that process (`doUpdate` calls `doStop update`,
+  `restart` is `doStop restart` with no start). The container exits with it,
+  mid-update. That is why only `BACKUP_CRON` exists; see issue #175.
 
 ## Common tasks
 
 - **Run the tests:** `bats tests` from the repository root
-  (`brew install bats-core`, needs 1.4.0 or newer). The suite sources
-  `bin/steam-entrypoint.sh` and exercises the pure-bash parts (sub instance
-  keys and ports, generated sub instance configs, the `Game.ini` symlink
-  healing, the declarative INI files, mod id collection, install detection,
-  the directory setup, the cluster config guard, the Discord config migration
-  and its hardcoded webhook warning, the disk space check, the appended
+  (`brew install bats-core`, needs 1.4.0 or newer). The suite sources both
+  entrypoints and exercises the pure-bash parts (sub instance keys and ports,
+  generated sub instance configs, the `Game.ini` symlink healing, the
+  declarative INI files, mod id collection, install detection, the directory
+  setup, the cluster config guard, the Discord config migration and its
+  hardcoded webhook warning, the disk space check, the appended
   arkmanager.cfg blocks, the backup budget and crash restart validation, the
-  `running-instances` state file the healthcheck reads). It never installs a
-  server, arkmanager and steamcmd are stubbed in `tests/stubs`.
+  `running-instances` state file the healthcheck reads, the cron schedule
+  validation and the generated crontab block). It never installs a server,
+  arkmanager and steamcmd are stubbed in `tests/stubs`.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
   failing non-final `[[ ... ]]` does not fail the test, so those assertions

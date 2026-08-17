@@ -42,9 +42,8 @@ services:
       - BACKUP_ON_STOP=${BACKUP_ON_STOP}
       - PRE_UPDATE_BACKUP=${PRE_UPDATE_BACKUP}
       - WARN_ON_STOP=${WARN_ON_STOP}
-      # # Scheduled jobs, see the README section "Add cronjobs"
+      # # Scheduled backup, see the README section "Add cronjobs"
       - BACKUP_CRON=${BACKUP_CRON:-}
-      - UPDATE_CRON=${UPDATE_CRON:-}
       - UPDATE_WARN_MINUTES=${UPDATE_WARN_MINUTES:-}
       # # Container timezone, cron schedules follow it
       - TZ=${TZ:-UTC}

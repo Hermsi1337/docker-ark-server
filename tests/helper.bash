@@ -24,6 +24,35 @@ load_entrypoint() {
   source "${REPO_ROOT}/bin/steam-entrypoint.sh"
 }
 
+# Same for the root entrypoint: sourcing it defines the cron helpers without
+# running the startup sequence, which would need root and a real volume.
+load_docker_entrypoint() {
+  export REPO_ROOT="${BATS_TEST_DIRNAME}/.."
+  export STUB_DIR="${BATS_TEST_DIRNAME}/stubs"
+  export PATH="${STUB_DIR}:${PATH}"
+  export STUB_LOG="${BATS_TEST_TMPDIR}/stub-calls.log"
+
+  export ARK_SERVER_VOLUME="${BATS_TEST_TMPDIR}/volume"
+  export TEMPLATE_DIRECTORY="${REPO_ROOT}/conf.d"
+  export BACKUP_CRON=""
+  export UPDATE_WARN_MINUTES=""
+
+  mkdir -p "${ARK_SERVER_VOLUME}"
+  : > "${STUB_LOG}"
+
+  source "${REPO_ROOT}/bin/docker-entrypoint.sh"
+}
+
+# A crontab in the volume, template plus a job the user added by hand.
+write_user_crontab() {
+  cp "${TEMPLATE_DIRECTORY}/crontab" "${ARK_SERVER_VOLUME}/crontab"
+  printf '# my own job\n0 1 * * * echo hi\n' >> "${ARK_SERVER_VOLUME}/crontab"
+}
+
+generated_job_lines() {
+  grep -c '^[^#]*arkmanager backup' "${ARK_SERVER_VOLUME}/crontab" || true
+}
+
 assert_contains() {
   case "${1}" in
     *"${2}"*) return 0 ;;

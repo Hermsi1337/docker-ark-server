@@ -5,7 +5,21 @@ CRON_BLOCK_END="# <<< docker-ark-server: generated cron jobs <<<"
 CRON_FIELD_NAMES=("minute" "hour" "day-of-month" "month" "day-of-week")
 CRON_FIELD_MINIMUM=(0 0 1 1 0)
 CRON_FIELD_MAXIMUM=(59 23 31 12 7)
+CRON_DAYS_PER_MONTH=(31 29 31 30 31 30 31 31 30 31 30 31)
+# cron drops crontab lines beyond 1000 bytes, and every list entry costs two
+# forks to validate, so keep both bounded well below that
+CRON_MAX_SCHEDULE_LENGTH=200
+CRON_MAX_FIELD_ENTRIES=64
 GENERATED_CRON_JOB_COUNT=0
+
+function trim_whitespace() {
+  local VALUE="${1}"
+
+  VALUE="${VALUE#"${VALUE%%[![:space:]]*}"}"
+  VALUE="${VALUE%"${VALUE##*[![:space:]]}"}"
+
+  printf '%s' "${VALUE}"
+}
 
 function reject_cron_schedule() {
   local -r VAR_NAME="${1}"
@@ -20,7 +34,7 @@ function reject_cron_schedule() {
 
 function cron_field_number() {
   local -r FIELD_INDEX="${1}"
-  local -r ITEM="${2,,}"
+  local ITEM="${2}"
   local NAMES NAME
   local -i NUMBER
 
@@ -34,6 +48,10 @@ function cron_field_number() {
     4) NAMES="sun mon tue wed thu fri sat"; NUMBER=0 ;;
     *) return 1 ;;
   esac
+
+  # ${ITEM,,} would be shorter, but the test suite also runs on the bash 3.2
+  # that macOS ships, where that expansion does not exist
+  ITEM="$(printf '%s' "${ITEM}" | tr '[:upper:]' '[:lower:]')"
 
   for NAME in ${NAMES}; do
     if [[ "${NAME}" == "${ITEM}" ]]; then
@@ -62,8 +80,18 @@ function assert_valid_cron_field() {
   fi
 
   IFS=',' read -ra ITEMS <<< "${FIELD}"
+  if [[ ${#ITEMS[@]} -gt ${CRON_MAX_FIELD_ENTRIES} ]]; then
+    reject_cron_schedule "${VAR_NAME}" "${SCHEDULE}" "the ${FIELD_NAME} field lists ${#ITEMS[@]} entries, more than the ${CRON_MAX_FIELD_ENTRIES} this image allows"
+  fi
+
   for ITEM in "${ITEMS[@]}"; do
     RANGE="${ITEM}"
+
+    # bash arithmetic wraps at 64 bits, so a long enough number would come out
+    # as a value that passes the range check below
+    if [[ "${ITEM}" =~ [0-9]{5} ]]; then
+      reject_cron_schedule "${VAR_NAME}" "${SCHEDULE}" "the ${FIELD_NAME} entry '${ITEM}' contains a number with more than four digits"
+    fi
 
     if [[ "${ITEM}" == */* ]]; then
       RANGE="${ITEM%%/*}"
@@ -96,9 +124,26 @@ function assert_valid_cron_field() {
   done
 }
 
-function assert_valid_cron_schedule() {
+function assert_possible_cron_date() {
   local -r VAR_NAME="${1}"
   local -r SCHEDULE="${2}"
+  local -r DAY_FIELD="${3}"
+  local -r MONTH_FIELD="${4}"
+  local DAY MONTH
+
+  [[ "${DAY_FIELD}" =~ ^[0-9]+$ ]] || return 0
+  [[ "${MONTH_FIELD}" =~ ^[0-9A-Za-z]+$ ]] || return 0
+  DAY="$(cron_field_number 2 "${DAY_FIELD}")" || return 0
+  MONTH="$(cron_field_number 3 "${MONTH_FIELD}")" || return 0
+
+  if (( DAY > CRON_DAYS_PER_MONTH[MONTH - 1] )); then
+    reject_cron_schedule "${VAR_NAME}" "${SCHEDULE}" "month ${MONTH} never has ${DAY} days, so this job would never run"
+  fi
+}
+
+function assert_valid_cron_schedule() {
+  local -r VAR_NAME="${1}"
+  local -r SCHEDULE="$(trim_whitespace "${2}")"
   local -a FIELDS=()
   local -i FIELD_INDEX
 
@@ -106,6 +151,10 @@ function assert_valid_cron_schedule() {
 
   if [[ "${SCHEDULE}" == *$'\n'* ]] || [[ "${SCHEDULE}" == *$'\r'* ]]; then
     reject_cron_schedule "${VAR_NAME}" "${SCHEDULE}" "it has to stay on a single line"
+  fi
+
+  if [[ ${#SCHEDULE} -gt ${CRON_MAX_SCHEDULE_LENGTH} ]]; then
+    reject_cron_schedule "${VAR_NAME}" "${SCHEDULE:0:60}..." "it is ${#SCHEDULE} characters long, more than the ${CRON_MAX_SCHEDULE_LENGTH} this image allows"
   fi
 
   if [[ "${SCHEDULE}" == @* ]]; then
@@ -126,27 +175,58 @@ function assert_valid_cron_schedule() {
   for (( FIELD_INDEX = 0; FIELD_INDEX < 5; FIELD_INDEX++ )); do
     assert_valid_cron_field "${VAR_NAME}" "${SCHEDULE}" "${FIELD_INDEX}" "${FIELDS[FIELD_INDEX]}"
   done
+
+  assert_possible_cron_date "${VAR_NAME}" "${SCHEDULE}" "${FIELDS[2]}" "${FIELDS[3]}"
 }
 
 function assert_valid_cron_configuration() {
+  local UNSUPPORTED
+
+  BACKUP_CRON="$(trim_whitespace "${BACKUP_CRON}")"
   assert_valid_cron_schedule BACKUP_CRON "${BACKUP_CRON}"
-  assert_valid_cron_schedule UPDATE_CRON "${UPDATE_CRON}"
 
   if [[ -n "${UPDATE_WARN_MINUTES}" ]] && [[ ! "${UPDATE_WARN_MINUTES}" =~ ^(0|[1-9][0-9]*)$ ]]; then
     echo "ERROR: UPDATE_WARN_MINUTES must be a whole number of minutes, got '${UPDATE_WARN_MINUTES}'"
     exit 1
   fi
 
-  # a scheduled update restarts every instance detached: on a multi-instance
-  # container the runner this script waits on is gone, so PID 1 exits and
-  # docker kills the freshly started instances before they can save
-  if [[ -n "${UPDATE_CRON}" ]] && [[ -n "${SUB_INSTANCE_KEYS//[[:space:],]/}" ]]; then
-    echo "ERROR: UPDATE_CRON cannot be combined with SUB_INSTANCE_KEYS."
-    echo "       A scheduled update would restart the instances detached, this container would exit"
-    echo "       without saving and docker would kill the new instances mid-start."
-    echo "       Use UPDATE_ON_START=true and restart the container on a schedule instead."
+  # people arrive from images that do have these, and a variable that silently
+  # does nothing is worse than one that says so
+  for UNSUPPORTED in UPDATE_CRON RESTART_CRON; do
+    if [[ -n "${!UNSUPPORTED}" ]]; then
+      echo "WARNING: ${UNSUPPORTED} is not supported by this image and is ignored."
+      echo "         An arkmanager update or restart stops the server, which is the process this container"
+      echo "         waits on, so the container would exit in the middle of it. Use UPDATE_ON_START=true"
+      echo "         and restart the container on a schedule instead (see the README)."
+    fi
+  done
+}
+
+function assert_crontab_is_regular_file() {
+  local -r CRONTAB_FILE="${ARK_SERVER_VOLUME}/crontab"
+
+  if [[ -e "${CRONTAB_FILE}" ]] && [[ ! -f "${CRONTAB_FILE}" ]]; then
+    echo "ERROR: ${CRONTAB_FILE} exists but is not a regular file."
+    echo "       A bind mount whose host path does not exist shows up as a directory here."
+    echo "       Fix the mount or remove the path, then start the container again."
     exit 1
   fi
+}
+
+# the rewriter matches the marker on the exact line, so the detection has to
+# use the same comparison - a substring match would flag an indented marker
+# that the rewriter then never finds
+function crontab_has_generated_block() {
+  local -r CRONTAB_FILE="${1}"
+
+  awk -v begin="${CRON_BLOCK_BEGIN}" '
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (line == begin) { found = 1; exit }
+    }
+    END { exit !found }
+  ' "${CRONTAB_FILE}"
 }
 
 function crontab_header_is_current() {
@@ -166,12 +246,13 @@ function render_generated_cronjobs() {
   local -i HAS_BLOCK=0
 
   # @all covers every instance - identical to @main on a single-map server and
-  # required on multi-map servers, where an update swaps the shared binaries
+  # required on multi-map servers. Only backups are scheduled here: every
+  # arkmanager command that stops the server (update, restart) kills the run
+  # process this container waits on, which takes the container down with it
   [[ -z "${BACKUP_CRON}" ]] || JOBS+=("${BACKUP_CRON} arkmanager backup @all >> ${LOG_TARGET} 2>&1")
-  [[ -z "${UPDATE_CRON}" ]] || JOBS+=("${UPDATE_CRON} arkmanager update @all --warn --update-mods >> ${LOG_TARGET} 2>&1")
   GENERATED_CRON_JOB_COUNT=${#JOBS[@]}
 
-  if grep -qF "${CRON_BLOCK_BEGIN}" "${CRONTAB_FILE}"; then
+  if crontab_has_generated_block "${CRONTAB_FILE}"; then
     HAS_BLOCK=1
   fi
 
@@ -303,6 +384,8 @@ chown -R "${STEAM_USER}": "${ARK_TOOLS_DIR}" || echo "Failed setting rights on $
 # symlink arkmanager directories
 rm -rf "/etc/arkmanager"
 ln -s "${ARK_TOOLS_DIR}" "/etc/arkmanager"
+
+assert_crontab_is_regular_file
 
 # Copy the crontab template on first start and load it as root: the setgid
 # crontab binary fails with "mkstemp: Permission denied" on hosts that run
