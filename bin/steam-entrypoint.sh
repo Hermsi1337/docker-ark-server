@@ -1,19 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
-
-[[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
-
-if [[ "$(id -u)" != "$(id -u "${STEAM_USER}")" ]]; then
-  echo "run this script as steam-user"
-  exit 1
-fi
-
-# minimal stop handler for the install/update phase: bash as PID 1 would
-# otherwise ignore SIGTERM entirely; replaced by stop_server once the
-# server is about to run
-trap 'exit 143' TERM INT
-
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
     [[ "${VALIDATE_ON_START}" != "true" ]] ||
@@ -164,6 +150,55 @@ EOF
   fi
 }
 
+# parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
+# variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
+# arkmanager instance name - restrict keys to a safe charset and fail loudly
+# instead of silently generating corrupt configs
+function parse_sub_instance_keys() {
+  local RAW_KEY KEY SEEN_KEY
+  local -a RAW_SUB_KEYS=()
+
+  SUB_KEYS=()
+  if [[ -n "${SUB_INSTANCE_KEYS}" ]]; then
+    IFS=',' read -ra RAW_SUB_KEYS <<< "${SUB_INSTANCE_KEYS}"
+    for RAW_KEY in "${RAW_SUB_KEYS[@]}"; do
+      # trim surrounding whitespace only - embedded whitespace must fail the
+      # charset check below instead of being silently collapsed
+      KEY="${RAW_KEY#"${RAW_KEY%%[![:space:]]*}"}"
+      KEY="${KEY%"${KEY##*[![:space:]]}"}"
+      [[ -n "${KEY}" ]] || continue
+      if [[ ! "${KEY}" =~ ^[A-Za-z0-9_]+$ ]]; then
+        echo "ERROR: invalid SUB_INSTANCE_KEYS entry '${RAW_KEY}'."
+        echo "       Keys may only contain letters, digits and underscores."
+        exit 1
+      fi
+      for SEEN_KEY in "${SUB_KEYS[@]}"; do
+        if [[ "${SEEN_KEY}" == "${KEY}" ]]; then
+          echo "ERROR: duplicate SUB_INSTANCE_KEYS entry '${KEY}'."
+          exit 1
+        fi
+      done
+      SUB_KEYS+=("${KEY}")
+    done
+  fi
+}
+
+# the sub instance port defaults are derived arithmetically - empty or
+# non-numeric ports would silently evaluate to 0, and a leading zero would
+# make bash read the value as octal
+function assert_valid_sub_instance_ports() {
+  local PORT_VAR
+
+  if [[ ${#SUB_KEYS[@]} -gt 0 ]]; then
+    for PORT_VAR in GAME_CLIENT_PORT SERVER_LIST_PORT RCON_PORT; do
+      if [[ ! "${!PORT_VAR}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "ERROR: ${PORT_VAR}='${!PORT_VAR}' must be a plain port number (no leading zero) when SUB_INSTANCE_KEYS is set."
+        exit 1
+      fi
+    done
+  fi
+}
+
 function remake_sub_instances_cfg() {
   local key target f
   local -i i=1
@@ -222,45 +257,58 @@ function get_all_mod_ids() {
   [[ ${#collected[@]} -eq 0 ]] || printf '%s\n' "${collected[@]}" | sort -u
 }
 
-# parse and validate SUB_INSTANCE_KEYS once: each key becomes part of a bash
-# variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
-# arkmanager instance name - restrict keys to a safe charset and fail loudly
-# instead of silently generating corrupt configs
-SUB_KEYS=()
-if [[ -n "${SUB_INSTANCE_KEYS}" ]]; then
-  IFS=',' read -ra RAW_SUB_KEYS <<< "${SUB_INSTANCE_KEYS}"
-  for RAW_KEY in "${RAW_SUB_KEYS[@]}"; do
-    # trim surrounding whitespace only - embedded whitespace must fail the
-    # charset check below instead of being silently collapsed
-    KEY="${RAW_KEY#"${RAW_KEY%%[![:space:]]*}"}"
-    KEY="${KEY%"${KEY##*[![:space:]]}"}"
-    [[ -n "${KEY}" ]] || continue
-    if [[ ! "${KEY}" =~ ^[A-Za-z0-9_]+$ ]]; then
-      echo "ERROR: invalid SUB_INSTANCE_KEYS entry '${RAW_KEY}'."
-      echo "       Keys may only contain letters, digits and underscores."
-      exit 1
-    fi
-    for SEEN_KEY in "${SUB_KEYS[@]}"; do
-      if [[ "${SEEN_KEY}" == "${KEY}" ]]; then
-        echo "ERROR: duplicate SUB_INSTANCE_KEYS entry '${KEY}'."
-        exit 1
+# Game.ini and GameUserSettings.ini in the volume root are convenience
+# symlinks to the real config files. Users regularly replace them with
+# regular files by accident (e.g. via SFTP upload) - in that case adopt the
+# uploaded content as the real config and re-create the symlink, instead of
+# dying on 'ln: File exists'.
+function heal_config_symlinks() {
+  local CONFIG_DIR="./server/ShooterGame/Saved/Config/LinuxServer"
+  local INI_FILE INI_LINK
+
+  for INI_FILE in Game.ini GameUserSettings.ini; do
+    INI_LINK="${ARK_SERVER_VOLUME}/${INI_FILE}"
+    if [[ -e "${INI_LINK}" ]] && [[ ! -L "${INI_LINK}" ]]; then
+      if [[ ! -f "${INI_LINK}" ]]; then
+        echo "${INI_LINK} exists but is not a file - moving it aside..."
+        mv "${INI_LINK}" "${INI_LINK}.invalid.$(date +%s)"
+      else
+        echo "${INI_LINK} is a regular file but should be a symlink to ${CONFIG_DIR}/${INI_FILE} - fixing..."
+        mkdir -p "${CONFIG_DIR}"
+        if [[ -d "${CONFIG_DIR}/${INI_FILE}" ]]; then
+          mv "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.invalid.$(date +%s)"
+        elif [[ -f "${CONFIG_DIR}/${INI_FILE}" ]]; then
+          cp -a "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.bak"
+        fi
+        mv -f "${INI_LINK}" "${CONFIG_DIR}/${INI_FILE}"
       fi
-    done
-    SUB_KEYS+=("${KEY}")
+    fi
+    [[ -L "${INI_LINK}" ]] || ln -s "${CONFIG_DIR}/${INI_FILE}" "${INI_FILE}"
   done
+}
+
+# everything below is the startup sequence; sourcing this script (the test
+# suite does) only defines the functions above
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  return 0
 fi
 
-# the sub instance port defaults are derived arithmetically - empty or
-# non-numeric ports would silently evaluate to 0, and a leading zero would
-# make bash read the value as octal
-if [[ ${#SUB_KEYS[@]} -gt 0 ]]; then
-  for PORT_VAR in GAME_CLIENT_PORT SERVER_LIST_PORT RCON_PORT; do
-    if [[ ! "${!PORT_VAR}" =~ ^[1-9][0-9]*$ ]]; then
-      echo "ERROR: ${PORT_VAR}='${!PORT_VAR}' must be a plain port number (no leading zero) when SUB_INSTANCE_KEYS is set."
-      exit 1
-    fi
-  done
+set -e
+
+[[ -z "${DEBUG}" ]] || [[ "${DEBUG,,}" = "false" ]] || [[ "${DEBUG,,}" = "0" ]] || set -x
+
+if [[ "$(id -u)" != "$(id -u "${STEAM_USER}")" ]]; then
+  echo "run this script as steam-user"
+  exit 1
 fi
+
+# minimal stop handler for the install/update phase: bash as PID 1 would
+# otherwise ignore SIGTERM entirely; replaced by stop_server once the
+# server is about to run
+trap 'exit 143' TERM INT
+
+parse_sub_instance_keys
+assert_valid_sub_instance_ports
 
 args=("$@")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
@@ -324,31 +372,7 @@ if [[ ${#SUB_KEYS[@]} -gt 0 ]] && grep -q '^arkautorestartfile=' "${ARK_TOOLS_DI
     echo "WARNING: could not update ${ARK_TOOLS_DIR}/arkmanager.cfg, continuing..."
 fi
 
-# Game.ini and GameUserSettings.ini in the volume root are convenience
-# symlinks to the real config files. Users regularly replace them with
-# regular files by accident (e.g. via SFTP upload) - in that case adopt the
-# uploaded content as the real config and re-create the symlink, instead of
-# dying on 'ln: File exists'.
-CONFIG_DIR="./server/ShooterGame/Saved/Config/LinuxServer"
-for INI_FILE in Game.ini GameUserSettings.ini; do
-  INI_LINK="${ARK_SERVER_VOLUME}/${INI_FILE}"
-  if [[ -e "${INI_LINK}" ]] && [[ ! -L "${INI_LINK}" ]]; then
-    if [[ ! -f "${INI_LINK}" ]]; then
-      echo "${INI_LINK} exists but is not a file - moving it aside..."
-      mv "${INI_LINK}" "${INI_LINK}.invalid.$(date +%s)"
-    else
-      echo "${INI_LINK} is a regular file but should be a symlink to ${CONFIG_DIR}/${INI_FILE} - fixing..."
-      mkdir -p "${CONFIG_DIR}"
-      if [[ -d "${CONFIG_DIR}/${INI_FILE}" ]]; then
-        mv "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.invalid.$(date +%s)"
-      elif [[ -f "${CONFIG_DIR}/${INI_FILE}" ]]; then
-        cp -a "${CONFIG_DIR}/${INI_FILE}" "${CONFIG_DIR}/${INI_FILE}.bak"
-      fi
-      mv -f "${INI_LINK}" "${CONFIG_DIR}/${INI_FILE}"
-    fi
-  fi
-  [[ -L "${INI_LINK}" ]] || ln -s "${CONFIG_DIR}/${INI_FILE}" "${INI_FILE}"
-done
+heal_config_symlinks
 
 if needs_install; then
   echo "No game files found. Installing..."

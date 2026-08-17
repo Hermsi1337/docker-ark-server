@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+echo "arkmanager $*" >> "${STUB_LOG:-/dev/null}"
