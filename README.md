@@ -121,7 +121,7 @@ Basic configuration is done with environment variables:
 | GAME_MOD_IDS | `empty` | Additional game mods to install, separated by comma (e.g. `GAME_MOD_IDS=487516323,487516324,487516325`) |
 | UPDATE_ON_START | false | Update the ARK server and mods (with a backup, if configured) before each start |
 | VALIDATE_ON_START | false | Let `steamcmd` validate and repair the server files during `UPDATE_ON_START` — useful after a corrupted update, but makes the start noticeably slower |
-| PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
+| PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server, and before a `TARGET_MANIFEST_ID` pin swaps the server binaries |
 | BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully |
 | MAX_BACKUP_SIZE_MB | `empty` | Size budget for `/app/backup`, in megabytes. arkmanager deletes the oldest backups once the directory grows past it, see [Backup retention](#backup-retention) |
 | WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |
@@ -679,26 +679,41 @@ join it.
 the build you want by date, and copy its manifest id (a long number). The
 `public` branch is the one a normal install uses.
 
+A whole cluster has to be pinned to the same manifest. Maps on different builds
+sharing one `/cluster` volume can corrupt transferred characters, dinos and
+items, so set `TARGET_MANIFEST_ID` on every container of the cluster, not just
+the one that broke.
+
 **What changes while a pin is set:**
 
 * `arkmanager` has no way to pass a manifest to `steamcmd`, so the install
   bypasses arkmanager and calls `steamcmd +download_depot` directly.
-* `UPDATE_ON_START` is ignored and arkmanager's own update-before-start is
-  switched off, otherwise the next restart would pull the broken build straight
-  back in. The container log says so on every start.
+* Updates are off. `UPDATE_ON_START` is ignored, and so is arkmanager's own
+  update-before-start (`arkmanager start`/`restart` from a cron job). The
+  container log says so on every start.
+* Mods are frozen too. A mod built for the current build usually does not load
+  on an older one, so freezing them next to the binaries is the point.
 * `BETA` is ignored. A manifest id already identifies exactly one build of one
   branch.
-* Mods are still installed and updated as usual.
 * An explicit `arkmanager update` (for example from one of the
-  [crontab](#add-cronjobs) examples) still updates. Comment those jobs out
-  while you are pinned.
+  [crontab](#add-cronjobs) examples) still updates and undoes the pin. Comment
+  those jobs out while you are pinned. If one runs anyway, the next start
+  notices the changed Steam build id, says so, and re-applies the pin.
+* A backup is taken before the server binaries are swapped, unless you set
+  `PRE_UPDATE_BACKUP=false`. If the backup fails, the swap is refused: an older
+  build rewrites the saves it loads on the first autosave.
 
-Change `TARGET_MANIFEST_ID` and restart to switch to a different build, or
-remove it to go back to normal updates. Switching from one pin to another
-copies the new build over the old one, it does not delete files the new build
-dropped. That is normally fine, but if a switched server misbehaves, back up
-`<your-volume>/server/ShooterGame/Saved`, delete `<your-volume>/server` and let
-it install again.
+Change `TARGET_MANIFEST_ID` and restart to switch to a different build.
+Switching from one pin to another copies the new build over the old one, it
+does not delete files the new build dropped. That is normally fine, but if a
+switched server misbehaves, back up `<your-volume>/server/ShooterGame/Saved`,
+delete `<your-volume>/server` and let it install again.
+
+**Getting back off a pin:** remove `TARGET_MANIFEST_ID` and restart. Because
+the pinned install never went through Steam's own bookkeeping, arkmanager would
+otherwise believe the downgraded files are current and never update them, so
+un-pinning throws that bookkeeping away and runs a full `steamcmd` validate
+pass back to the current build. Expect one slow start.
 
 **Steam login:** the current public manifests download fine with the default
 anonymous login. If `steamcmd` reports that the manifest is not available, that
@@ -706,11 +721,19 @@ manifest is not reachable anonymously (this happens for manifests that only
 ever existed on a beta branch) and you need an account that owns ARK, see
 [Configure a Steam login session](#configure-a-steam-login-session).
 
+`download_depot` never learned the manifest request codes Steam introduced in
+2021, so for some older manifests it hands over the current build instead of
+the one you asked for. The entrypoint compares what `steamcmd` reports and
+cached against what you asked for, and refuses to install a mismatch rather
+than quietly putting the broken build back. If that happens, the build is out
+of reach with `steamcmd` and no setting here helps.
+
 **Disk space:** `download_depot` ignores the install directory and always
 stages the full depot below `/home/steam` first, so a pinned install needs
-~25GB there on top of the ~25GB in the server volume. The staging copy is
-removed as soon as it has been moved into place. If you mounted a Steam session
-volume at `/home/steam/Steam`, the staging copy may land there.
+~25GB there on top of the ~25GB in the server volume, and on a normal Docker
+host both are the same disk, so ~50GB. The staging copy is removed as soon as
+it has been moved into place. If you mounted a Steam session volume at
+`/home/steam/Steam`, the staging copy may land there.
 
 ## Cluster and multi-map support
 
@@ -950,7 +973,9 @@ Plan with **at least 8 GB of RAM** (more with mods and larger maps — ARK is
 hungry) and **~25 GB of disk** for the base install, plus headroom for
 staging, backups and mods. Memory can be capped with docker's usual
 `mem_limit` / `deploy.resources` settings, but if the limit is below what the
-map needs the server will simply be OOM-killed.
+map needs the server will simply be OOM-killed. Pinning with
+`TARGET_MANIFEST_ID` needs roughly double the disk during the install, see
+[Pin the server to a Steam manifest](#pin-the-server-to-a-steam-manifest-downgrade).
 
 ### Restore a backup
 

@@ -154,10 +154,26 @@ downstream compose files and scripts.
   ever update to the newest build (steamcmd's `app_update` takes no manifest
   argument, and arkmanager has no `download_depot` support), so a pinned
   install calls `steamcmd +download_depot` directly and copies the depot into
-  the server directory. It then has to keep arkmanager away from steamcmd: the
-  entrypoint forces `UPDATE_ON_START=false`, which `conf.d/arkmanager.cfg`
-  binds to `arkAutoUpdateOnStart`, and which cron jobs also read via
-  `BASH_ENV`. Do not fold this back into an `arkmanager install/update` call.
+  the server directory. Do not fold this back into an `arkmanager
+  install/update` call. Consequences worth knowing before touching that path:
+  - Bypassing `app_update` means no `steamapps/appmanifest_376030.acf` is
+    written and the depot ships no `version.txt`, so none of arkmanager's
+    version bookkeeping describes a pinned install. `server/.ark_manifest_pin`
+    is the image's own record (pinned manifest plus the Steam build id at pin
+    time) and the only thing that proves a pinned install completed.
+  - A changed build id means something ran `app_update` behind the pin (a cron
+    `arkmanager update`); the next start detects that and re-applies the pin.
+  - Un-pinning deletes that stale bookkeeping so the normal install path runs a
+    full validate back to the current build. Without it arkmanager reads a
+    stale build id and calls the downgraded server up to date.
+  - `arkmanager run` does **not** auto-update (`doRun` never calls `doUpdate`);
+    `start`/`restart` do, via `arkAutoUpdateOnStart`. Forcing
+    `UPDATE_ON_START=false` while pinned covers those and the cron environment,
+    it is not what holds the pin on a normal start.
+  - `download_depot` never learned Steam's 2021 manifest request codes and can
+    silently deliver the current build instead. The install verifies the
+    manifest steamcmd reports and the `depotcache/<depot>_<manifest>.manifest`
+    it leaves behind, and refuses to copy anything it cannot confirm.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 - **`bin/steam-entrypoint.sh` is sourceable.** Everything above the
