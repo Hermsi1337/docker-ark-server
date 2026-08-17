@@ -345,11 +345,14 @@ function filesystem_of() {
 function depot_staging_root() {
   local FOUND
 
-  # steamcmd does not always stage below the same directory, and a mounted
-  # Steam session volume can move it to another filesystem - measure a
-  # steamapps directory it created itself before falling back to a guess
-  FOUND="$(find "${STEAM_HOME}" -maxdepth 4 -type d -name steamapps -print -quit 2>/dev/null)"
-  echo "${FOUND:-${STEAM_HOME}}"
+  # download_depot unpacks below steamcmd's own directory, e.g.
+  # /home/steam/steamcmd/linux32/steamapps/content/app_376030/depot_376031 -
+  # never below the Steam session directory that STEAM_LOGIN mounts, so a
+  # mounted session volume does not hold the staging copy
+  [[ -d "${STEAM_HOME}/steamcmd" ]] || { echo "${STEAM_HOME}"; return 0; }
+
+  FOUND="$(find "${STEAM_HOME}/steamcmd" -maxdepth 3 -type d -name steamapps -print -quit 2>/dev/null)"
+  echo "${FOUND:-${STEAM_HOME}/steamcmd}"
 }
 
 function assert_free_disk_space_on() {
@@ -415,10 +418,10 @@ function assert_free_disk_space() {
 function find_downloaded_depot() {
   local -r DEPOT_ID="${1}"
 
-  # match on the depot id alone: depot 1006 belongs to app 1007, so steamcmd
-  # files it under a different app directory than the one we asked for. The
-  # depth limit keeps find out of the ~22GB of depot content below the match.
-  find "${STEAM_HOME}" -maxdepth 6 -type d \
+  # for app 376030 steamcmd files both depots under app_376030, but the app
+  # directory of a shared depot is not guaranteed, so match on the depot id.
+  # The depth limit keeps find out of the ~22GB of content below the match.
+  find "${STEAM_HOME}" -maxdepth 7 -type d \
     -path "*/content/app_*/depot_${DEPOT_ID}" -print -quit 2>/dev/null
 }
 
@@ -428,6 +431,20 @@ function find_cached_manifest() {
 
   find "${STEAM_HOME}" -maxdepth 5 -type f \
     -name "${DEPOT_ID}_${MANIFEST_ID}.manifest" -print -quit 2>/dev/null
+}
+
+function warm_steam_app_info() {
+  # download_depot fails with "missing app info (Missing configuration)" until
+  # the app info sits in steamcmd's cache, and +app_info_update alone does not
+  # put it there - only a following +app_info_print does. That prints a few
+  # hundred KB of VDF, so this runs on its own and logs instead of printing.
+  echo "Loading the Steam app info for ${ARK_APP_ID} (download_depot needs it cached)..."
+  "${STEAM_HOME}/steamcmd/steamcmd.sh" \
+    +@NoPromptForPassword 1 \
+    +login "${STEAM_LOGIN}" \
+    +app_info_update 1 \
+    +app_info_print "${ARK_APP_ID}" \
+    +quit >> "${PINNED_INSTALL_LOG}" 2>&1 || true
 }
 
 function steamcmd_download_depot() {
@@ -445,7 +462,7 @@ function steamcmd_download_depot() {
 
   "${STEAM_HOME}/steamcmd/steamcmd.sh" \
     +@NoPromptForPassword 1 \
-    +login "${STEAM_LOGIN:-anonymous}" \
+    +login "${STEAM_LOGIN}" \
     "${DEPOT_ARGS[@]}" \
     +quit 2>&1 | tee -a "${PINNED_INSTALL_LOG}" || true
 }
@@ -458,12 +475,14 @@ function verified_depot_path() {
   local LINE DEPOT_PATH REPORTED_MANIFEST CROSS_CHECKED=""
 
   # steamcmd's exit status is useless (it reports success for downloads that
-  # never happened), this line is its only completeness signal
+  # never happened), this line is its only completeness signal. It looks like
+  #   Depot download complete : "/home/steam/steamcmd/linux32\steamapps\content\app_376030\depot_1006" (manifest 6403079453713498174)
+  # so the path in it mixes separators and does not exist as written - read
+  # only the manifest id from the line and locate the directory with find
   LINE="$(grep -i 'depot download complete' "${PINNED_INSTALL_LOG}" | grep -F "depot_${DEPOT_ID}" | tail -n1)"
   [[ -n "${LINE}" ]] || return 1
 
-  DEPOT_PATH="$(sed -n 's/.*"\([^"]*\)".*/\1/p' <<< "${LINE}")"
-  [[ -d "${DEPOT_PATH}" ]] || DEPOT_PATH="$(find_downloaded_depot "${DEPOT_ID}")"
+  DEPOT_PATH="$(find_downloaded_depot "${DEPOT_ID}")"
   [[ -d "${DEPOT_PATH}" ]] || return 1
 
   if [[ -n "${EXPECTED_MANIFEST}" ]]; then
@@ -483,6 +502,27 @@ function verified_depot_path() {
   fi
 
   echo "${DEPOT_PATH}"
+}
+
+function explain_steamcmd_failure() {
+  if grep -qi 'No subscription\|missing license' "${PINNED_INSTALL_LOG}"; then
+    echo "       steamcmd reports no licence for depot ${ARK_CONTENT_DEPOT_ID}, so the account"
+    echo "       '${STEAM_LOGIN}' cannot download it. Use an account that owns ARK: Survival Evolved."
+
+    return
+  fi
+
+  if grep -qi 'missing app info\|Missing configuration' "${PINNED_INSTALL_LOG}"; then
+    echo "       steamcmd could not load the app info it needs for download_depot."
+    echo "       That is usually a login that did not go through - re-create the Steam session"
+    echo "       with deploy/steam-login.sh (see the README)."
+
+    return
+  fi
+
+  echo "       Verify the manifest id on https://steamdb.info/depot/${ARK_CONTENT_DEPOT_ID}/manifests/"
+  echo "       'Manifest not available' means this account cannot see that manifest, which"
+  echo "       happens for manifests that only ever existed on a beta branch."
 }
 
 function report_kept_staging() {
@@ -541,6 +581,7 @@ function install_pinned_manifest() {
   echo "arkmanager cannot pass a manifest to steamcmd, so this bypasses it and calls steamcmd directly."
 
   : > "${PINNED_INSTALL_LOG}"
+  warm_steam_app_info
   steamcmd_download_depot "${ARK_REDIST_DEPOT_ID}" ""
   steamcmd_download_depot "${ARK_CONTENT_DEPOT_ID}" "${TARGET_MANIFEST_ID}"
 
@@ -558,9 +599,7 @@ function install_pinned_manifest() {
   if (( RESULT != 0 )); then
     echo "ERROR: steamcmd did not finish downloading depot ${ARK_CONTENT_DEPOT_ID} at manifest ${TARGET_MANIFEST_ID}."
     echo "       Its full output is in ${PINNED_INSTALL_LOG}."
-    echo "       Verify the manifest id on https://steamdb.info/depot/${ARK_CONTENT_DEPOT_ID}/manifests/"
-    echo "       'Manifest not available' means this account cannot see that manifest - set STEAM_LOGIN"
-    echo "       to an account that owns ARK and mount a Steam session (see the README)."
+    explain_steamcmd_failure
     report_kept_staging
     remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
     exit 1
@@ -993,6 +1032,19 @@ if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
   if [[ ! "${TARGET_MANIFEST_ID}" =~ ^[0-9]+$ ]]; then
     echo "ERROR: TARGET_MANIFEST_ID='${TARGET_MANIFEST_ID}' must be a plain numeric Steam manifest id."
     echo "       Look it up on https://steamdb.info/depot/${ARK_CONTENT_DEPOT_ID}/manifests/"
+    exit 1
+  fi
+
+  # steamcmd refuses download_depot for the anonymous account with
+  # "missing license for depot (No subscription)", even though app_update of
+  # the same app works anonymously - fail here instead of after a long download
+  if [[ -z "${STEAM_LOGIN}" ]] || [[ "${STEAM_LOGIN}" == "anonymous" ]]; then
+    echo "ERROR: TARGET_MANIFEST_ID needs a Steam account that owns ARK: Survival Evolved."
+    echo "       steamcmd only allows the anonymous account to run app_update, not"
+    echo "       download_depot, which is the only way to ask for a specific build:"
+    echo "         Depot download failed : missing license for depot (No subscription)"
+    echo "       Set STEAM_LOGIN and mount a Steam session, see the README section"
+    echo "       'Configure a Steam login session'."
     exit 1
   fi
 

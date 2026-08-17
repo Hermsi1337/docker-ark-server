@@ -181,6 +181,22 @@ downstream compose files and scripts.
     silently deliver the current build instead. The install verifies the
     manifest steamcmd reports and the `depotcache/<depot>_<manifest>.manifest`
     it leaves behind, and refuses to copy anything it cannot confirm.
+  - Verified against real steamcmd on Linux, do not "simplify" these away:
+    - **`download_depot` needs a real Steam login.** Anonymous gets
+      `missing license for depot (No subscription)` for depot 376031, although
+      `app_update 376030` works anonymously. The entrypoint refuses to start
+      with a pin and an anonymous `STEAM_LOGIN`.
+    - **`+app_info_update 1` alone is not enough**, only a following
+      `+app_info_print <appid>` puts the app info in the cache that
+      `download_depot` needs. Without it the first pinned install in a fresh
+      container dies with `missing app info (Missing configuration)`.
+    - **The path in the completion line is unusable**, it comes out as
+      `"/home/steam/steamcmd/linux32\steamapps\content\app_376030\depot_1006"`
+      with mixed separators. Read only the manifest id from that line and
+      locate the directory with `find`.
+    - **The depot lands under `/home/steam/steamcmd/linux32/steamapps/...`**,
+      not under `${STEAM_HOME}/Steam`, so the disk gate measures the steamcmd
+      directory. A mounted Steam session volume never holds the staging copy.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 - **`bin/steam-entrypoint.sh` is sourceable.** Everything above the

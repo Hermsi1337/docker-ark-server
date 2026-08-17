@@ -133,8 +133,8 @@ Basic configuration is done with environment variables:
 | ARK_GAME_USER_SETTINGS_INI_FILE | `empty` | Same for `GameUserSettings.ini` |
 | BETA | `empty` | Opt into a Steam beta branch if necessary (e.g. `BETA=preaquatica`) |
 | BETA_ACCESSCODE | `empty` | Access code for the chosen beta branch, if it requires one |
-| TARGET_MANIFEST_ID | `empty` | Pin the server files to one specific Steam manifest of depot `376031`, e.g. to roll back a broken update. Disables all automatic updates while set, see [Pin the server to a Steam manifest](#pin-the-server-to-a-steam-manifest-downgrade) |
-| STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)) |
+| TARGET_MANIFEST_ID | `empty` | Pin the server files to one specific Steam manifest of depot `376031`, e.g. to roll back a broken update. Requires `STEAM_LOGIN` with an account that owns ARK, and disables all automatic updates while set, see [Pin the server to a Steam manifest](#pin-the-server-to-a-steam-manifest-downgrade) |
+| STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)). Anonymous is fine for normal installs, `TARGET_MANIFEST_ID` needs a real account that owns ARK |
 | ARK_SERVER_VOLUME | /app | Path inside the container where the server files are stored |
 | PUID | `empty` | Run the server with a custom UID, e.g. to match the owner of a bind mount on NAS systems. If the server volume's ownership does not match, it is adopted once via a recursive chown, which can take a while |
 | PGID | `empty` | Run the server with a custom GID (see `PUID`) |
@@ -665,7 +665,10 @@ of ARK's content depot (`376031`):
 
 ```yaml
     environment:
+      STEAM_LOGIN: "YOUR_STEAM_USERNAME"
       TARGET_MANIFEST_ID: "6366771435093287465"
+    volumes:
+      - ./Steam:/home/steam/Steam:rw
 ```
 
 This is an escape hatch for broken updates, not an everyday setting. Leave it
@@ -673,6 +676,20 @@ empty (the default) unless a specific build is actually broken for you, and
 remove it again once Wildcard has fixed things. A pinned server misses every
 later fix, and depending on the ARK version, clients may no longer be able to
 join it.
+
+⚠️ **A Steam account that owns ARK is required.** A normal install uses
+`steamcmd`'s `app_update`, which works with the anonymous account. Asking for a
+specific build needs `download_depot`, and Steam does not allow that one
+anonymously:
+
+```
+Depot download failed : missing license for depot (No subscription)
+```
+
+So set `STEAM_LOGIN` to an account that owns ARK: Survival Evolved and mount a
+session, see [Configure a Steam login session](#configure-a-steam-login-session).
+The container refuses to start with a pin and an anonymous login instead of
+downloading for an hour and failing at the end.
 
 **Finding a manifest id:** open
 [depot 376031 on SteamDB](https://steamdb.info/depot/376031/manifests/), find
@@ -722,28 +739,30 @@ otherwise believe the downgraded files are current and never update them, so
 un-pinning throws that bookkeeping away and runs a full `steamcmd` validate
 pass back to the current build. Expect one slow start.
 
-**Steam login:** the current public manifests download fine with the default
-anonymous login. If `steamcmd` reports that the manifest is not available, that
-manifest is not reachable anonymously (this happens for manifests that only
-ever existed on a beta branch) and you need an account that owns ARK, see
-[Configure a Steam login session](#configure-a-steam-login-session).
+**When a manifest cannot be fetched.** Two failures are worth recognising, both
+of them `steamcmd` limitations rather than something to configure away:
 
-`download_depot` never learned the manifest request codes Steam introduced in
-2021, so for some older manifests it hands over the current build instead of
-the one you asked for. The entrypoint compares what `steamcmd` reports and
-cached against what you asked for, and refuses to install a mismatch rather
-than quietly putting the broken build back. If that happens, the build is out
-of reach with `steamcmd` and no setting here helps.
+* `Manifest not available` means the account cannot see that manifest. It
+  happens for manifests that only ever existed on a beta branch.
+* `download_depot` never learned the manifest request codes Steam introduced in
+  2021, so for some older manifests it hands over the current build instead of
+  the one you asked for. The entrypoint compares what `steamcmd` reports and
+  cached against what you asked for and refuses to install a mismatch, rather
+  than quietly putting the broken build back.
+
+In both cases that build is out of reach with `steamcmd`. The container log
+names which one you hit.
 
 **Disk space:** `download_depot` ignores the install directory and always
-stages the full depot below `/home/steam` first, so a pinned install needs
-~25GB there on top of the ~25GB in the server volume. On a normal Docker host
-both are the same disk, so the first pinned install wants ~50GB free and every
-later re-pin ~25GB. The staging copy is removed once it has been moved into
-place, and also when an install gives up, except for a download that was cut
-short, which is kept so a restart can resume it (the error names the directory
-and its size). If you mounted a Steam session volume at `/home/steam/Steam`,
-the staging copy may land there.
+unpacks below `/home/steam/steamcmd` first, so a pinned install needs ~25GB
+there on top of the ~25GB in the server volume. On a normal Docker host both
+are the same disk, so the first pinned install wants ~50GB free and every later
+re-pin ~25GB. Note that `/home/steam/steamcmd` is the container's own
+filesystem, not a volume, so hosts that cap the container writable layer need
+that cap raised. The staging copy is removed once it has been moved into place,
+and also when an install gives up, except for a download that was cut short,
+which is kept so a restart can resume it (the error names the directory and its
+size).
 
 ## Cluster and multi-map support
 
