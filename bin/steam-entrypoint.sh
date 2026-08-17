@@ -152,19 +152,48 @@ EOF
 
 function add_discord_to_arkmanager_cfg() {
   local -r config="${ARK_TOOLS_DIR}/arkmanager.cfg"
-  # the historic template ships a commented discordWebhookURL example, so
-  # match on the environment variable instead of the setting name
-  if ! grep -q 'DISCORD_WEBHOOK_URL' "${config}"; then
-    echo "Adding Discord notification settings to the existing arkmanager.cfg ..."
-    if ! cat <<'EOF' >> "${config}"
+  local -r staged="${config}.discord.$$"
+
+  # match the assignment, not the variable name: a user comment mentioning
+  # DISCORD_WEBHOOK_URL must not count as "already migrated"
+  if grep -qF '|| discordWebhookURL=' "${config}"; then
+    return
+  fi
+
+  echo "Adding Discord notification settings to the existing arkmanager.cfg ..."
+
+  # stage and rename instead of appending in place: arkmanager sources this
+  # file, so a half-written assignment would break every command
+  if ! cp -a "${config}" "${staged}"; then
+    echo "WARNING: could not stage ${config} (read-only?), continuing..."
+    return
+  fi
+
+  if ! cat <<'EOF' >> "${staged}"
 
 # Discord notifications - active only when DISCORD_WEBHOOK_URL is set (see README)
 [ -z "${DISCORD_WEBHOOK_URL}" ] || discordWebhookURL="${DISCORD_WEBHOOK_URL}"
-[ -z "${NOTIFY_TEMPLATE}" ] || notifyTemplate="${NOTIFY_TEMPLATE}"
 EOF
-    then
-      echo "WARNING: could not append Discord notification settings to ${config} (read-only?), continuing..."
-    fi
+  then
+    echo "WARNING: could not write ${staged}, continuing without Discord notifications..."
+    rm -f "${staged}"
+
+    return
+  fi
+
+  mv "${staged}" "${config}" || {
+    echo "WARNING: could not replace ${config}, continuing without Discord notifications..."
+    rm -f "${staged}"
+  }
+}
+
+function warn_on_hardcoded_discord_webhook() {
+  local -r config="${ARK_TOOLS_DIR}/arkmanager.cfg"
+
+  if grep -qE '^[[:space:]]*discordWebhookURL=' "${config}"; then
+    echo "WARNING: ${config} assigns discordWebhookURL directly."
+    echo "         That webhook keeps receiving notifications even when DISCORD_WEBHOOK_URL is empty."
+    echo "         Comment the line out to put the environment variable in charge."
   fi
 }
 
@@ -368,7 +397,11 @@ cd "${ARK_SERVER_VOLUME}"
 # export the container environment for cron jobs (minus shell bookkeeping):
 # the bundled crontab loads it via BASH_ENV so that arkmanager and its
 # bash-based config files see the same variables as the server process
-export -p | grep -Ev '^declare -x (PWD|OLDPWD|SHLVL)($|=)' > "${ARK_SERVER_VOLUME}/environment"
+#
+# the dump holds the admin password and the Discord webhook URL, so it must
+# never exist world-readable, not even for the duration of the write - the
+# umask covers a new file, the chmod one an older image version left behind
+(umask 077 && export -p | grep -Ev '^declare -x (PWD|OLDPWD|SHLVL)($|=)' > "${ARK_SERVER_VOLUME}/environment")
 chmod 600 "${ARK_SERVER_VOLUME}/environment" || echo "Failed to restrict permissions on ${ARK_SERVER_VOLUME}/environment, continuing startup..."
 
 echo "Setting up folder and file structure..."
@@ -380,6 +413,7 @@ copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/
 
 add_cluster_to_arkmanager_cfg
 add_discord_to_arkmanager_cfg
+warn_on_hardcoded_discord_webhook
 remake_sub_instances_cfg
 
 # multi-instance needs per-instance autorestart files: the historic template
