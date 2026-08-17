@@ -121,7 +121,7 @@ Basic configuration is done with environment variables:
 | GAME_MOD_IDS | `empty` | Additional game mods to install, separated by comma (e.g. `GAME_MOD_IDS=487516323,487516324,487516325`) |
 | UPDATE_ON_START | false | Update the ARK server and mods (with a backup, if configured) before each start |
 | VALIDATE_ON_START | false | Let `steamcmd` validate and repair the server files during `UPDATE_ON_START` — useful after a corrupted update, but makes the start noticeably slower |
-| PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server |
+| PRE_UPDATE_BACKUP | true | Create a backup before updating the ARK server, and before a `TARGET_MANIFEST_ID` pin swaps the server binaries |
 | BACKUP_ON_STOP | false | Create a backup after the world save when the container is stopped gracefully |
 | MAX_BACKUP_SIZE_MB | `empty` | Size budget for `/app/backup`, in megabytes. arkmanager deletes the oldest backups once the directory grows past it, see [Backup retention](#backup-retention) |
 | WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |
@@ -133,7 +133,8 @@ Basic configuration is done with environment variables:
 | ARK_GAME_USER_SETTINGS_INI_FILE | `empty` | Same for `GameUserSettings.ini` |
 | BETA | `empty` | Opt into a Steam beta branch if necessary (e.g. `BETA=preaquatica`) |
 | BETA_ACCESSCODE | `empty` | Access code for the chosen beta branch, if it requires one |
-| STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)) |
+| TARGET_MANIFEST_ID | `empty` | Pin the server files to one specific Steam manifest of depot `376031`, e.g. to roll back a broken update. Requires `STEAM_LOGIN` with an account that owns ARK, and disables all automatic updates while set, see [Pin the server to a Steam manifest](#pin-the-server-to-a-steam-manifest-downgrade) |
+| STEAM_LOGIN | anonymous | Steam account used by `steamcmd` (see [Steam login session](#configure-a-steam-login-session)). Anonymous is fine for normal installs, `TARGET_MANIFEST_ID` needs a real account that owns ARK |
 | ARK_SERVER_VOLUME | /app | Path inside the container where the server files are stored |
 | PUID | `empty` | Run the server with a custom UID, e.g. to match the owner of a bind mount on NAS systems. If the server volume's ownership does not match, it is adopted once via a recursive chown, which can take a while |
 | PGID | `empty` | Run the server with a custom GID (see `PUID`) |
@@ -141,7 +142,7 @@ Basic configuration is done with environment variables:
 | UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always game client port +1) |
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
-| SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
+| SKIP_DISK_CHECK | false | Skip the free-disk-space check before installing the server files (~25GB, ~50GB for a first install with `TARGET_MANIFEST_ID`) |
 | DISCORD_WEBHOOK_URL | `empty` | Discord webhook to notify on start, stop, crash and restart, see [Discord notifications](#discord-notifications) |
 | DISABLE_HEALTHCHECK | false | Set to `true` to make the [health check](#health-check) always report healthy, for UIs that do not expose `--no-healthcheck` |
 | HEALTHCHECK_REQUIRE_ALL_INSTANCES | false | Report unhealthy as soon as one instance is down, instead of only when all of them are, see [health check](#health-check) |
@@ -536,12 +537,18 @@ vim "${HOME}/ark-server/crontab"
 Add your desired cronjobs with valid syntax (they run as the `steam` user):
 
 ```bash
-0 4 * * * arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
+0 4 * * * [ -z "${TARGET_MANIFEST_ID}" ] && arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
 0 0 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
 ```
 
 (`@all` targets every instance — identical to `@main` on a single-map server
 and required on [multi-map servers](#cluster-and-multi-map-support).)
+
+The `[ -z "${TARGET_MANIFEST_ID}" ]` guard keeps the job away from a server
+pinned with [`TARGET_MANIFEST_ID`](#pin-the-server-to-a-steam-manifest-downgrade).
+arkmanager only ever updates to the newest build, so without the guard the job
+undoes the pin and puts the build you are escaping back. Cron jobs read the
+same exported environment as the server, so the variable is there.
 
 The container environment is exported to `/app/environment` on every start and
 loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
@@ -579,9 +586,9 @@ and skip the rest of this section.
 
 ```bash
 # every hour: check for a new build and pull it into staging, nothing stops
-0 * * * * arkmanager update @all --downloadonly --update-mods >> /app/log/crontab.log 2>&1
+0 * * * * [ -z "${TARGET_MANIFEST_ID}" ] && arkmanager update @all --downloadonly --update-mods >> /app/log/crontab.log 2>&1
 # 6am: apply it, but only if something new really is staged
-0 6 * * * cmp -s /app/server/steamapps/appmanifest_376030.acf /app/staging/steamapps/appmanifest_376030.acf || arkmanager update @all --no-download --update-mods --warn >> /app/log/crontab.log 2>&1
+0 6 * * * [ -z "${TARGET_MANIFEST_ID}" ] && ! cmp -s /app/server/steamapps/appmanifest_376030.acf /app/staging/steamapps/appmanifest_376030.acf && arkmanager update @all --no-download --update-mods --warn >> /app/log/crontab.log 2>&1
 ```
 
 That `cmp` guard is not decoration. The apply job never compares the staged
@@ -596,6 +603,11 @@ at all, which counts as different. Downloading hourly instead of once keeps
 staging fresh enough that the 6am window usually has something to apply. And if
 a newer build appears between the last download and the apply, you get the one
 you staged and the next cycle catches up.
+
+The `cmp` guard says nothing about a pinned server, which is why both jobs
+carry the `TARGET_MANIFEST_ID` guard as well. A pinned install has no
+`appmanifest_376030.acf` at all, so the comparison differs from the first
+staged download onwards and the apply job would swap in unpinned binaries.
 
 About the countdown. `--warn` counts down `arkwarnminutes` from
 `arkmanager.cfg` (60 here), but `arkprecisewarn` is `false`, so with nobody
@@ -655,6 +667,133 @@ and never overwritten. If your server volume was first created with an image
 older than timestamp `1656497302`, edit line 15 of
 `<your-volume>/arkmanager/arkmanager.cfg` and replace it with:
 `steamlogin="${STEAM_LOGIN}"`
+
+### Pin the server to a Steam manifest (downgrade)
+
+Sometimes Wildcard ships a broken build and the only way out is going back to
+the previous one. `TARGET_MANIFEST_ID` pins the server files to one exact build
+of ARK's content depot (`376031`):
+
+```yaml
+    environment:
+      STEAM_LOGIN: "YOUR_STEAM_USERNAME"
+      TARGET_MANIFEST_ID: "6366771435093287465"
+    volumes:
+      - ./Steam:/home/steam/Steam:rw
+```
+
+This is an escape hatch for broken updates, not an everyday setting. Leave it
+empty (the default) unless a specific build is actually broken for you, and
+remove it again once Wildcard has fixed things. A pinned server misses every
+later fix, and depending on the ARK version, clients may no longer be able to
+join it.
+
+⚠️ **A Steam account that owns ARK is required.** A normal install uses
+`steamcmd`'s `app_update`, which works with the anonymous account. Asking for a
+specific build needs `download_depot`, and Steam does not allow that one
+anonymously:
+
+```
+Depot download failed : missing license for depot (No subscription)
+```
+
+So set `STEAM_LOGIN` to an account that owns ARK: Survival Evolved and mount a
+session, see [Configure a Steam login session](#configure-a-steam-login-session).
+The container refuses to start with a pin and an anonymous login instead of
+downloading for an hour and failing at the end.
+
+**Finding a manifest id:** open
+[depot 376031 on SteamDB](https://steamdb.info/depot/376031/manifests/), find
+the build you want by date, and copy its manifest id (a long number). The
+`public` branch is the one a normal install uses.
+
+A whole cluster has to be pinned to the same manifest. Maps on different builds
+sharing one `/cluster` volume can corrupt transferred characters, dinos and
+items, so set `TARGET_MANIFEST_ID` on every container of the cluster, not just
+the one that broke.
+
+**What changes while a pin is set:**
+
+* `arkmanager` has no way to pass a manifest to `steamcmd`, so the install
+  bypasses arkmanager and calls `steamcmd +download_depot` directly.
+* Updates are off. `UPDATE_ON_START` is ignored, and so is arkmanager's own
+  update-before-start (`arkmanager start`/`restart` from a cron job). The
+  container log says so on every start.
+* **Mods are not pinned, and cannot be.** The Workshop only ever serves a mod's
+  current version, and there is no manifest to ask for. So a pinned server with
+  `GAME_MOD_IDS` or `SERVER_MAP_MOD_ID` installs mods built against the current
+  server build, next to older binaries. Mods that were already installed are
+  left alone (the install loop skips them), which is the closest thing to
+  freezing you get. If a mod refuses to load on the pinned build, there is no
+  setting here that helps.
+* `BETA` is ignored. A manifest id already identifies exactly one build of one
+  branch.
+* An explicit `arkmanager update` still updates and undoes the pin. Every
+  update job in the shipped [crontab](#add-cronjobs) examples is guarded with
+  `[ -z "${TARGET_MANIFEST_ID}" ]` for exactly this reason. If you wrote your
+  own job, add the same guard. A crontab created by an older version of this
+  image keeps its unguarded jobs, the template is only copied once, so check
+  `<your-volume>/crontab` before you pin.
+
+  If an update runs anyway, the next container start notices and re-applies the
+  pin. Two things to be clear about: the check only runs at startup, so an
+  unpinned server can serve players for as long as it takes you to restart it,
+  and re-applying the pin means downloading the full ~22GB again, it is not a
+  cheap repair.
+
+  What the check actually is: the image records the Steam build id and a
+  checksum of `ShooterGameServer` at the moment it pins, and compares both on
+  every start. Those two values say "nothing has replaced the server since we
+  pinned it". They do not identify which build is on disk. Anything that leaves
+  the executable byte for byte identical is invisible, including changes
+  confined to the other ~22GB of content. It is a tripwire for the update paths
+  this image has, not an integrity check.
+* A backup is taken before the server binaries are swapped, unless you set
+  `PRE_UPDATE_BACKUP=false`. If the backup fails, the swap is refused: an older
+  build rewrites the saves it loads on the first autosave.
+
+Change `TARGET_MANIFEST_ID` and restart to switch to a different build.
+Switching from one pin to another copies the new build over the old one, it
+does not delete files the new build dropped. That is normally fine, but if a
+switched server misbehaves, back up `<your-volume>/server/ShooterGame/Saved`,
+delete `<your-volume>/server` and let it install again.
+
+**Getting back off a pin:** remove `TARGET_MANIFEST_ID` and restart. Because
+the pinned install never went through Steam's own bookkeeping, arkmanager would
+otherwise believe the downgraded files are current and never update them, so
+un-pinning throws that bookkeeping away and runs a full `steamcmd` validate
+pass back to the current build. Expect one slow start.
+
+Careful: an empty `TARGET_MANIFEST_ID` is all it takes, so starting the
+container without your env file un-pins it and walks the server straight back
+to the build you were escaping. A backup is taken first (unless
+`PRE_UPDATE_BACKUP=false`) and the log says what is happening, but nothing asks
+you to confirm.
+
+**When a manifest cannot be fetched.** Two failures are worth recognising, both
+of them `steamcmd` limitations rather than something to configure away:
+
+* `Manifest not available` means the account cannot see that manifest. It
+  happens for manifests that only ever existed on a beta branch.
+* `download_depot` never learned the manifest request codes Steam introduced in
+  2021, so for some older manifests it hands over the current build instead of
+  the one you asked for. The entrypoint compares what `steamcmd` reports and
+  cached against what you asked for and refuses to install a mismatch, rather
+  than quietly putting the broken build back.
+
+In both cases that build is out of reach with `steamcmd`. The container log
+names which one you hit.
+
+**Disk space:** `download_depot` ignores the install directory and always
+unpacks below `/home/steam/steamcmd` first, so a pinned install needs ~25GB
+there on top of the ~25GB in the server volume. On a normal Docker host both
+are the same disk, so the first pinned install wants ~50GB free and every later
+re-pin ~25GB. Note that `/home/steam/steamcmd` is the container's own
+filesystem, not a volume, so hosts that cap the container writable layer need
+that cap raised. The staging copy is removed once it has been moved into place,
+and also when an install gives up, except for a download that was cut short,
+which is kept so a restart can resume it (the error names the directory and its
+size).
 
 ## Cluster and multi-map support
 
@@ -894,7 +1033,9 @@ Plan with **at least 8 GB of RAM** (more with mods and larger maps — ARK is
 hungry) and **~25 GB of disk** for the base install, plus headroom for
 staging, backups and mods. Memory can be capped with docker's usual
 `mem_limit` / `deploy.resources` settings, but if the limit is below what the
-map needs the server will simply be OOM-killed.
+map needs the server will simply be OOM-killed. Pinning with
+`TARGET_MANIFEST_ID` needs roughly double the disk during the install, see
+[Pin the server to a Steam manifest](#pin-the-server-to-a-steam-manifest-downgrade).
 
 ### Restore a backup
 

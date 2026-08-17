@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 
+ARK_APP_ID="376030"
+ARK_CONTENT_DEPOT_ID="376031"
+# shared Steamworks redistributable depot, owned by app 1007
+ARK_REDIST_DEPOT_ID="1006"
+MANIFEST_PIN_FILE="${ARK_SERVER_VOLUME}/server/.ark_manifest_pin"
+PINNED_INSTALL_LOG="${ARK_SERVER_VOLUME}/log/steamcmd-pinned-install.log"
+
 function may_update() {
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    echo "Not updating: this server is pinned to manifest ${TARGET_MANIFEST_ID} (\$TARGET_MANIFEST_ID)."
+    return
+  fi
+
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
     [[ "${VALIDATE_ON_START}" != "true" ]] ||
       echo "WARNING: VALIDATE_ON_START has no effect because UPDATE_ON_START is not 'true' - skipping validation"
@@ -237,12 +249,70 @@ function apply_ini_file() {
   echo "...applied ${source_file} to ${destination} for instance ${instance}"
 }
 
+function read_pin_field() {
+  local -r FIELD="${1}"
+
+  [[ -f "${MANIFEST_PIN_FILE}" ]] || return 0
+  sed -n "s/^${FIELD}=//p" "${MANIFEST_PIN_FILE}" | tail -n1
+}
+
+function installed_steam_buildid() {
+  local -r ACF="${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_${ARK_APP_ID}.acf"
+  local BUILDID
+
+  [[ -f "${ACF}" ]] || { echo "none"; return 0; }
+
+  # an appmanifest that exists but cannot be parsed (a torn write, say) must
+  # not read the same as no appmanifest at all, or it passes as "unchanged"
+  BUILDID="$(sed -n 's/.*"buildid"[^0-9]*"\([0-9]*\)".*/\1/p' "${ACF}" | head -n1)"
+  echo "${BUILDID:-unreadable}"
+}
+
+function server_binary_fingerprint() {
+  local -r SERVER_EXEC="${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
+
+  [[ -s "${SERVER_EXEC}" ]] || { echo "none"; return 0; }
+  cksum < "${SERVER_EXEC}" | awk '{print $1"-"$2}'
+}
+
 function needs_install() {
   local SERVER_DIR="${ARK_SERVER_VOLUME}/server"
   local SERVER_EXEC="${SERVER_DIR}/ShooterGame/Binaries/Linux/ShooterGameServer"
   if [ ! -d "${SERVER_DIR}" ]; then
     echo "${SERVER_DIR} not found ..."
     return 0
+  fi
+
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    if [[ "$(read_pin_field manifest)" != "${TARGET_MANIFEST_ID}" ]]; then
+      echo "Installed files are not pinned to manifest ${TARGET_MANIFEST_ID} ..."
+      return 0
+    fi
+
+    # download_depot writes no appmanifest and the ARK depot ships no
+    # version.txt, so the pin file plus the unpacked depot is the only proof
+    # that a pinned install ever completed
+    if [ ! -s "${SERVER_EXEC}" ] || [ ! -d "${SERVER_DIR}/Engine" ]; then
+      echo "The pinned server files are not complete ..."
+      return 0
+    fi
+
+    # arkmanager rewrites the appmanifest every time it runs app_update, e.g.
+    # from a cron 'arkmanager update'
+    if [[ "$(read_pin_field buildid_at_pin)" != "$(installed_steam_buildid)" ]]; then
+      echo "The Steam build id changed since this server was pinned - something updated it, re-applying the pin ..."
+      return 0
+    fi
+
+    # a repair that rewrites the binaries without touching Steam's bookkeeping
+    # leaves the build id alone, so compare the binary itself as well
+    if [[ "$(read_pin_field binary_at_pin)" != "$(server_binary_fingerprint)" ]]; then
+      echo "The server binary changed since this server was pinned - something replaced it, re-applying the pin ..."
+      return 0
+    fi
+
+    echo "Already installed (pinned to manifest ${TARGET_MANIFEST_ID})."
+    return 1
   fi
 
   # Backwards compatibility - but only trust version.txt if the server
@@ -254,7 +324,7 @@ function needs_install() {
   fi
 
   local INSTALLED_FILES=(
-    "${SERVER_DIR}/steamapps/appmanifest_376030.acf"
+    "${SERVER_DIR}/steamapps/appmanifest_${ARK_APP_ID}.acf"
     "${SERVER_EXEC}"
   )
   for FILE in "${INSTALLED_FILES[@]}"; do
@@ -268,10 +338,45 @@ function needs_install() {
   return 1
 }
 
+function filesystem_of() {
+  df -P "${1}" 2>/dev/null | awk 'NR==2 {print $1}'
+}
+
+function depot_staging_root() {
+  local FOUND
+
+  # download_depot unpacks below steamcmd's own directory, e.g.
+  # /home/steam/steamcmd/linux32/steamapps/content/app_376030/depot_376031 -
+  # never below the Steam session directory that STEAM_LOGIN mounts, so a
+  # mounted session volume does not hold the staging copy
+  [[ -d "${STEAM_HOME}/steamcmd" ]] || { echo "${STEAM_HOME}"; return 0; }
+
+  FOUND="$(find "${STEAM_HOME}/steamcmd" -maxdepth 3 -type d -name steamapps -print -quit 2>/dev/null)"
+  echo "${FOUND:-${STEAM_HOME}/steamcmd}"
+}
+
+function assert_free_disk_space_on() {
+  local -r TARGET="${1}"
+  local -r REQUIRED_MB="${2}"
+  local AVAILABLE_MB
+
+  (( REQUIRED_MB > 0 )) || return 0
+
+  AVAILABLE_MB="$(df -Pm "${TARGET}" | awk 'NR==2 {print $4}')"
+  if [[ -n "${AVAILABLE_MB}" ]] && (( AVAILABLE_MB < REQUIRED_MB )); then
+    echo "ERROR: Not enough free disk space on ${TARGET}:"
+    echo "       ${AVAILABLE_MB}MB available, ~${REQUIRED_MB}MB required for the ARK server files."
+    echo "       Free up disk space, or set SKIP_DISK_CHECK=true to install anyway."
+    exit 1
+  fi
+}
+
 function assert_free_disk_space() {
   # a fresh ARK install needs roughly 25GB (plus staging/backup headroom)
-  local REQUIRED_MB="25000"
-  local AVAILABLE_MB
+  local -r REQUIRED_MB="25000"
+  local -a TARGETS=() AMOUNTS=()
+  local NEEDED SEEN_EARLIER
+  local -i I J
 
   if [[ "${SKIP_DISK_CHECK}" == "true" ]]; then
     return
@@ -281,17 +386,308 @@ function assert_free_disk_space() {
   # only fetches what is missing - the full-size gate is for fresh installs.
   # Content is only ever created by the install path (not the config-symlink
   # healing above), so it reliably marks a previous install attempt.
-  if [[ -d "${ARK_SERVER_VOLUME}/server/ShooterGame/Content" ]]; then
+  if [[ ! -d "${ARK_SERVER_VOLUME}/server/ShooterGame/Content" ]]; then
+    TARGETS+=("${ARK_SERVER_VOLUME}")
+    AMOUNTS+=("${REQUIRED_MB}")
+  fi
+
+  # download_depot ignores force_install_dir and always stages the full depot
+  # below steamcmd's home first, on every pinned install
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    TARGETS+=("$(depot_staging_root)")
+    AMOUNTS+=("${REQUIRED_MB}")
+  fi
+
+  # on a default Docker host all of these live on the same device, where only
+  # the sum of the requirements actually fits
+  for (( I = 0; I < ${#TARGETS[@]}; I++ )); do
+    NEEDED=0
+    SEEN_EARLIER=""
+    for (( J = 0; J < ${#TARGETS[@]}; J++ )); do
+      [[ "$(filesystem_of "${TARGETS[J]}")" == "$(filesystem_of "${TARGETS[I]}")" ]] || continue
+      if (( J < I )); then
+        SEEN_EARLIER="yes"
+      fi
+      NEEDED=$(( NEEDED + AMOUNTS[J] ))
+    done
+    [[ -z "${SEEN_EARLIER}" ]] || continue
+    assert_free_disk_space_on "${TARGETS[I]}" "${NEEDED}"
+  done
+}
+
+function find_downloaded_depot() {
+  local -r DEPOT_ID="${1}"
+
+  # for app 376030 steamcmd files both depots under app_376030, but the app
+  # directory of a shared depot is not guaranteed, so match on the depot id.
+  # The depth limit keeps find out of the ~22GB of content below the match.
+  find "${STEAM_HOME}" -maxdepth 7 -type d \
+    -path "*/content/app_*/depot_${DEPOT_ID}" -print -quit 2>/dev/null
+}
+
+function find_cached_manifest() {
+  local -r DEPOT_ID="${1}"
+  local -r MANIFEST_ID="${2}"
+
+  find "${STEAM_HOME}" -maxdepth 5 -type f \
+    -name "${DEPOT_ID}_${MANIFEST_ID}.manifest" -print -quit 2>/dev/null
+}
+
+function warm_steam_app_info() {
+  # download_depot fails with "missing app info (Missing configuration)" until
+  # the app info sits in steamcmd's cache, and +app_info_update alone does not
+  # put it there - only a following +app_info_print does. That prints a few
+  # hundred KB of VDF, so this runs on its own and logs instead of printing.
+  echo "Loading the Steam app info for ${ARK_APP_ID} (download_depot needs it cached)..."
+  "${STEAM_HOME}/steamcmd/steamcmd.sh" \
+    +@NoPromptForPassword 1 \
+    +login "${STEAM_LOGIN}" \
+    +app_info_update 1 \
+    +app_info_print "${ARK_APP_ID}" \
+    +quit >> "${PINNED_INSTALL_LOG}" 2>&1 || true
+}
+
+function steamcmd_download_depot() {
+  local -r DEPOT_ID="${1}"
+  local -r MANIFEST_ID="${2}"
+  local -a DEPOT_ARGS=(+download_depot "${ARK_APP_ID}" "${DEPOT_ID}")
+
+  # steamcmd keeps the manifest it really fetched in depotcache as
+  # <depotid>_<manifestid>.manifest; dropping a stale copy first turns its
+  # presence afterwards into proof that this run fetched that exact manifest
+  if [[ -n "${MANIFEST_ID}" ]]; then
+    DEPOT_ARGS+=("${MANIFEST_ID}")
+    rm -f "$(find_cached_manifest "${DEPOT_ID}" "${MANIFEST_ID}")" 2>/dev/null || true
+  fi
+
+  "${STEAM_HOME}/steamcmd/steamcmd.sh" \
+    +@NoPromptForPassword 1 \
+    +login "${STEAM_LOGIN}" \
+    "${DEPOT_ARGS[@]}" \
+    +quit 2>&1 | tee -a "${PINNED_INSTALL_LOG}" || true
+}
+
+# echoes the directory the depot was unpacked into, or fails with
+# 1 = no completed download, 2 = a different manifest than the one asked for
+function verified_depot_path() {
+  local -r DEPOT_ID="${1}"
+  local -r EXPECTED_MANIFEST="${2}"
+  local LINE DEPOT_PATH REPORTED_MANIFEST CROSS_CHECKED=""
+
+  # steamcmd's exit status is useless (it reports success for downloads that
+  # never happened), this line is its only completeness signal. It looks like
+  #   Depot download complete : "/home/steam/steamcmd/linux32\steamapps\content\app_376030\depot_1006" (manifest 6403079453713498174)
+  # so the path in it mixes separators and does not exist as written - read
+  # only the manifest id from the line and locate the directory with find
+  LINE="$(grep -i 'depot download complete' "${PINNED_INSTALL_LOG}" | grep -F "depot_${DEPOT_ID}" | tail -n1)"
+  [[ -n "${LINE}" ]] || return 1
+
+  DEPOT_PATH="$(find_downloaded_depot "${DEPOT_ID}")"
+  [[ -d "${DEPOT_PATH}" ]] || return 1
+
+  if [[ -n "${EXPECTED_MANIFEST}" ]]; then
+    REPORTED_MANIFEST="$(sed -n 's/.*manifest \([0-9][0-9]*\).*/\1/p' <<< "${LINE}")"
+    if [[ -n "${REPORTED_MANIFEST}" ]]; then
+      [[ "${REPORTED_MANIFEST}" == "${EXPECTED_MANIFEST}" ]] || return 2
+      CROSS_CHECKED="yes"
+    fi
+
+    if [[ -n "$(find "${STEAM_HOME}" -maxdepth 4 -type d -name depotcache -print -quit 2>/dev/null)" ]]; then
+      [[ -n "$(find_cached_manifest "${DEPOT_ID}" "${EXPECTED_MANIFEST}")" ]] || return 2
+      CROSS_CHECKED="yes"
+    fi
+
+    [[ -n "${CROSS_CHECKED}" ]] ||
+      echo "WARNING: could not confirm which manifest steamcmd delivered for depot ${DEPOT_ID}" >&2
+  fi
+
+  echo "${DEPOT_PATH}"
+}
+
+function explain_steamcmd_failure() {
+  if grep -qi 'No subscription\|missing license' "${PINNED_INSTALL_LOG}"; then
+    echo "       steamcmd reports no licence for depot ${ARK_CONTENT_DEPOT_ID}. Either the Steam"
+    echo "       session for '${STEAM_LOGIN}' has expired, which is the common case on a server"
+    echo "       that ran fine yesterday, or that account does not own ARK: Survival Evolved."
+    echo "       Re-create the session with deploy/steam-login.sh first (see the README), and"
+    echo "       only look for another account if the fresh session fails the same way."
+
     return
   fi
 
-  AVAILABLE_MB="$(df -Pm "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}')"
-  if [[ -n "${AVAILABLE_MB}" ]] && (( AVAILABLE_MB < REQUIRED_MB )); then
-    echo "ERROR: Not enough free disk space on ${ARK_SERVER_VOLUME}:"
-    echo "       ${AVAILABLE_MB}MB available, ~${REQUIRED_MB}MB required for the ARK server files."
-    echo "       Free up disk space, or set SKIP_DISK_CHECK=true to install anyway."
+  if grep -qi 'missing app info\|Missing configuration' "${PINNED_INSTALL_LOG}"; then
+    echo "       steamcmd could not load the app info it needs for download_depot."
+    echo "       That is usually a login that did not go through - re-create the Steam session"
+    echo "       with deploy/steam-login.sh (see the README)."
+
+    return
+  fi
+
+  echo "       Verify the manifest id on https://steamdb.info/depot/${ARK_CONTENT_DEPOT_ID}/manifests/"
+  echo "       'Manifest not available' means this account cannot see that manifest, which"
+  echo "       happens for manifests that only ever existed on a beta branch."
+}
+
+function staging_marker_of() {
+  local -r DEPOT_DIR="${1}"
+
+  # derive the depot id from the directory so that clearing one depot's staging
+  # cannot remove another depot's marker - they share a parent directory
+  echo "$(dirname "${DEPOT_DIR}")/.ark_requested_manifest_${DEPOT_DIR##*/depot_}"
+}
+
+function report_kept_staging() {
+  local DEPOT_DIR
+
+  DEPOT_DIR="$(find_downloaded_depot "${ARK_CONTENT_DEPOT_ID}")"
+  [[ -n "${DEPOT_DIR}" ]] || return 0
+
+  # download_depot unpacks into content/app_<id>/depot_<id>, a path with no
+  # manifest in it, so a kept partial download is indistinguishable from one
+  # for another manifest - label it, reset_stale_content_staging reads this
+  echo "${TARGET_MANIFEST_ID}" > "$(staging_marker_of "${DEPOT_DIR}")"
+
+  echo "       The partial download was kept so a restart can resume it:"
+  echo "       ${DEPOT_DIR} ($(du -sh "${DEPOT_DIR}" 2>/dev/null | cut -f1) so far)."
+  echo "       Delete it by hand if you would rather have the disk space back."
+}
+
+function reset_stale_content_staging() {
+  local DEPOT_DIR
+
+  DEPOT_DIR="$(find_downloaded_depot "${ARK_CONTENT_DEPOT_ID}")"
+  [[ -n "${DEPOT_DIR}" ]] || return 0
+
+  # only a download that was kept for this exact manifest may be resumed;
+  # anything else would let steamcmd write this build over another build's
+  # files and hand the mixture on as verified
+  if [[ "$(cat "$(staging_marker_of "${DEPOT_DIR}")" 2>/dev/null)" == "${TARGET_MANIFEST_ID}" ]]; then
+    echo "...resuming the staged download for manifest ${TARGET_MANIFEST_ID}"
+
+    return 0
+  fi
+
+  echo "...discarding a staged download that was not for manifest ${TARGET_MANIFEST_ID}"
+  rm -rf "${DEPOT_DIR}" "$(staging_marker_of "${DEPOT_DIR}")"
+}
+
+function remove_depot_staging() {
+  local -r DEPOT_ID="${1}"
+  local DEPOT_DIR
+
+  DEPOT_DIR="$(find_downloaded_depot "${DEPOT_ID}")"
+  [[ -n "${DEPOT_DIR}" ]] || return 0
+  echo "...removing the staged download in ${DEPOT_DIR}"
+  rm -rf "${DEPOT_DIR}" "$(staging_marker_of "${DEPOT_DIR}")"
+}
+
+function install_depot_files() {
+  local -r DEPOT_DIR="${1}"
+
+  echo "...moving ${DEPOT_DIR} into ${ARK_SERVER_VOLUME}/server"
+  if ! cp -a "${DEPOT_DIR}/." "${ARK_SERVER_VOLUME}/server/"; then
+    echo "ERROR: could not copy ${DEPOT_DIR} into ${ARK_SERVER_VOLUME}/server - out of disk space?"
+    echo "       The server directory now holds a half-swapped mix of two builds; the pin was"
+    echo "       already dropped, so the next start reinstalls it from scratch."
+    echo "       Removing the downloaded depots so that attempt has room again."
+    remove_depot_staging "${ARK_CONTENT_DEPOT_ID}"
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
     exit 1
   fi
+  # steamcmd never cleans up its download directory, and leaving it behind
+  # would keep a second full copy of the server files on disk
+  rm -rf "${DEPOT_DIR}"
+}
+
+function backup_before_binary_swap() {
+  local -r SAVED_DIR="${ARK_SERVER_VOLUME}/server/ShooterGame/Saved"
+
+  [[ "${PRE_UPDATE_BACKUP}" == "true" ]] || return 0
+  [[ -n "$(find "${SAVED_DIR}" -mindepth 1 -maxdepth 2 -name '*.ark' -print -quit 2>/dev/null)" ]] || return 0
+
+  echo "Creating a backup before swapping the server binaries (\$PRE_UPDATE_BACKUP is 'true')..."
+  ${ARKMANAGER} backup @main
+}
+
+function install_pinned_manifest() {
+  local CONTENT_DIR REDIST_DIR
+  local -i RESULT=0
+
+  echo "Installing app ${ARK_APP_ID} pinned to manifest ${TARGET_MANIFEST_ID}..."
+  echo "arkmanager cannot pass a manifest to steamcmd, so this bypasses it and calls steamcmd directly."
+
+  : > "${PINNED_INSTALL_LOG}"
+  reset_stale_content_staging
+  warm_steam_app_info
+  steamcmd_download_depot "${ARK_REDIST_DEPOT_ID}" ""
+  steamcmd_download_depot "${ARK_CONTENT_DEPOT_ID}" "${TARGET_MANIFEST_ID}"
+
+  CONTENT_DIR="$(verified_depot_path "${ARK_CONTENT_DEPOT_ID}" "${TARGET_MANIFEST_ID}")" || RESULT=$?
+  if (( RESULT == 2 )); then
+    echo "ERROR: steamcmd did not deliver manifest ${TARGET_MANIFEST_ID} of depot ${ARK_CONTENT_DEPOT_ID}."
+    echo "       download_depot was never taught the manifest request codes Steam introduced in 2021,"
+    echo "       so for some older manifests it quietly downloads the current build instead."
+    echo "       Refusing to install that - it would put the build you are escaping back on disk."
+    echo "       Retrying would fetch the same wrong build, so the download is not kept."
+    remove_depot_staging "${ARK_CONTENT_DEPOT_ID}"
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
+    exit 1
+  fi
+  if (( RESULT != 0 )); then
+    echo "ERROR: steamcmd did not finish downloading depot ${ARK_CONTENT_DEPOT_ID} at manifest ${TARGET_MANIFEST_ID}."
+    echo "       Its full output is in ${PINNED_INSTALL_LOG}."
+    explain_steamcmd_failure
+    report_kept_staging
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
+    exit 1
+  fi
+
+  if ! backup_before_binary_swap; then
+    echo "ERROR: the backup failed, refusing to swap the server binaries."
+    echo "       A pin usually moves the server to an older build, and an older build rewrites"
+    echo "       the saves it loads on the first autosave - going ahead risks the world."
+    echo "       Fix the backup, or set PRE_UPDATE_BACKUP=false to swap without one."
+    remove_depot_staging "${ARK_CONTENT_DEPOT_ID}"
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
+    exit 1
+  fi
+
+  # from here the server directory is a mix of two builds until the last copy
+  # lands - drop the pin first so an aborted swap can never be mistaken for a
+  # finished one on the next start
+  rm -f "${MANIFEST_PIN_FILE}"
+
+  install_depot_files "${CONTENT_DIR}"
+  # download_depot hands the files over without the executable bit, unlike the
+  # app_update path arkmanager uses
+  chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
+
+  # the ARK server binary loads steamclient.so from linux64/, which lives in
+  # the shared Steamworks redistributable depot rather than in the game depot
+  RESULT=0
+  REDIST_DIR="$(verified_depot_path "${ARK_REDIST_DEPOT_ID}" "")" || RESULT=$?
+  if (( RESULT == 0 )); then
+    install_depot_files "${REDIST_DIR}"
+  elif [[ -s "${ARK_SERVER_VOLUME}/server/linux64/steamclient.so" ]]; then
+    echo "WARNING: depot ${ARK_REDIST_DEPOT_ID} (Steamworks redistributables) did not download,"
+    echo "         keeping the copy that is already installed."
+  else
+    echo "ERROR: depot ${ARK_REDIST_DEPOT_ID} (Steamworks redistributables) did not download and"
+    echo "       server/linux64/steamclient.so is not installed either. The server cannot start"
+    echo "       without it, so this install stays unpinned and the next start retries it."
+    echo "       Its full output is in ${PINNED_INSTALL_LOG}."
+    explain_steamcmd_failure
+    exit 1
+  fi
+
+  # Steam's own metadata still describes the build this pin replaced. Leaving
+  # it lets arkmanager and the staged-update cron examples compare a build that
+  # is not installed against the latest one and act on the difference.
+  rm -f "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_${ARK_APP_ID}.acf"
+
+  printf 'manifest=%s\nbuildid_at_pin=%s\nbinary_at_pin=%s\n' \
+    "${TARGET_MANIFEST_ID}" "$(installed_steam_buildid)" "$(server_binary_fingerprint)" \
+    > "${MANIFEST_PIN_FILE}"
 }
 
 function add_cluster_to_arkmanager_cfg() {
@@ -682,6 +1078,40 @@ done
 # restarts on failure would repeat that on every cycle just to hit the same typo
 assert_ini_files_are_usable
 
+if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+  if [[ ! "${TARGET_MANIFEST_ID}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: TARGET_MANIFEST_ID='${TARGET_MANIFEST_ID}' must be a plain numeric Steam manifest id."
+    echo "       Look it up on https://steamdb.info/depot/${ARK_CONTENT_DEPOT_ID}/manifests/"
+    exit 1
+  fi
+
+  # steamcmd refuses download_depot for the anonymous account with
+  # "missing license for depot (No subscription)", even though app_update of
+  # the same app works anonymously - fail here instead of after a long download
+  if [[ -z "${STEAM_LOGIN}" ]] || [[ "${STEAM_LOGIN}" == "anonymous" ]]; then
+    echo "ERROR: TARGET_MANIFEST_ID needs a Steam account that owns ARK: Survival Evolved."
+    echo "       steamcmd only allows the anonymous account to run app_update, not"
+    echo "       download_depot, which is the only way to ask for a specific build:"
+    echo "         Depot download failed : missing license for depot (No subscription)"
+    echo "       Set STEAM_LOGIN and mount a Steam session, see the README section"
+    echo "       'Configure a Steam login session'."
+    exit 1
+  fi
+
+  # arkmanager only ever updates to the newest build. 'arkmanager run' does not
+  # update on its own, but 'arkmanager start'/'restart' do when
+  # arkAutoUpdateOnStart is true, and the config binds that to UPDATE_ON_START -
+  # cron jobs read the same exported environment
+  if [[ "${UPDATE_ON_START}" == "true" ]]; then
+    echo "WARNING: UPDATE_ON_START is ignored while TARGET_MANIFEST_ID pins this server to a manifest"
+  fi
+  UPDATE_ON_START="false"
+
+  if [[ -n "${BETA}" ]]; then
+    echo "WARNING: BETA has no effect while TARGET_MANIFEST_ID is set - a manifest id already identifies one build of one branch"
+  fi
+fi
+
 args=("$@")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
   args=('--arkopt,-crossplay' "${args[@]}")
@@ -706,6 +1136,9 @@ echo "# RUNNING AS USER '${STEAM_USER}' - '$(id -u)'"
 echo "# ARGS: ${args[*]}"
 if [ -n "${BETA}" ]; then
   echo "# BETA: ${BETA}"
+fi
+if [ -n "${TARGET_MANIFEST_ID}" ]; then
+  echo "# TARGET_MANIFEST_ID: ${TARGET_MANIFEST_ID}"
 fi
 echo "_______________________________________"
 
@@ -758,8 +1191,30 @@ fi
 
 heal_config_symlinks
 
+if [[ -z "${TARGET_MANIFEST_ID}" ]] && [[ -f "${MANIFEST_PIN_FILE}" ]]; then
+  echo "TARGET_MANIFEST_ID is no longer set, removing the manifest pin (it was $(read_pin_field manifest))."
+  echo "If you did not mean to un-pin, stop the container now: an empty TARGET_MANIFEST_ID is all"
+  echo "it takes, so a compose run without your env file lands here too."
+  echo "The pinned install bypassed steamcmd's bookkeeping, so arkmanager cannot tell which build is"
+  echo "on disk and would happily call it up to date. Dropping that bookkeeping forces a full"
+  echo "steamcmd validate pass back to the current build, which takes a while but is the only"
+  echo "way back to a server arkmanager can keep updated."
+
+  if ! backup_before_binary_swap; then
+    echo "ERROR: the backup failed, refusing to un-pin."
+    echo "       Un-pinning replaces the server binaries, and the saves were written by the"
+    echo "       pinned build - going ahead without a backup risks the world."
+    echo "       Fix the backup, or set PRE_UPDATE_BACKUP=false to un-pin without one."
+    exit 1
+  fi
+
+  rm -f "${MANIFEST_PIN_FILE}" \
+        "${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_${ARK_APP_ID}.acf" \
+        "${ARK_SERVER_VOLUME}/server/version.txt"
+fi
+
 if needs_install; then
-  echo "No game files found. Installing..."
+  echo "Installing the ARK server files..."
 
   assert_free_disk_space
 
@@ -771,7 +1226,9 @@ if needs_install; then
   touch "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
   chmod +x "${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
 
-  if ! ${ARKMANAGER} install @main --verbose "${BETA_ARGS[@]}"; then
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    install_pinned_manifest
+  elif ! ${ARKMANAGER} install @main --verbose "${BETA_ARGS[@]}"; then
     echo "ERROR: Installation failed - check the steamcmd output above."
     echo "       Common causes: not enough disk space ($(df -Ph "${ARK_SERVER_VOLUME}" | awk 'NR==2 {print $4}') left on ${ARK_SERVER_VOLUME}), network hiccups."
     exit 1
@@ -791,6 +1248,11 @@ fi
 declare -a ALL_GAME_MOD_IDS=()
 mapfile -t ALL_GAME_MOD_IDS < <(get_all_mod_ids)
 if [[ ${#ALL_GAME_MOD_IDS[@]} -gt 0 ]]; then
+  if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
+    echo "WARNING: mods cannot be pinned. The Workshop only ever serves their current version,"
+    echo "         which was built against the current server build, not the pinned one."
+  fi
+
   echo "Installing mods: '${ALL_GAME_MOD_IDS[*]}' ..."
 
   for MOD_ID in "${ALL_GAME_MOD_IDS[@]}"; do

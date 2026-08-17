@@ -150,6 +150,70 @@ downstream compose files and scripts.
   probe piles up into hundreds an hour. That is why the call runs as its own
   process group and the group is signalled, instead of `timeout` alone, which
   signals the command but not reliably what the command forked.
+- **`TARGET_MANIFEST_ID` bypasses arkmanager on purpose.** arkmanager can only
+  ever update to the newest build (steamcmd's `app_update` takes no manifest
+  argument, and arkmanager has no `download_depot` support), so a pinned
+  install calls `steamcmd +download_depot` directly and copies the depot into
+  the server directory. Do not fold this back into an `arkmanager
+  install/update` call. Consequences worth knowing before touching that path:
+  - Bypassing `app_update` means no `steamapps/appmanifest_376030.acf` is
+    written and the depot ships no `version.txt`, so none of arkmanager's
+    version bookkeeping describes a pinned install. `server/.ark_manifest_pin`
+    is the image's own record (`manifest`, `buildid_at_pin` and
+    `binary_at_pin`, a `cksum` of `ShooterGameServer`) and the only thing that
+    proves a pinned install completed. The `_at_pin` suffixes are deliberate:
+    those two fields say nothing has replaced the server since the pin, they do
+    not identify which build is on disk.
+  - **The pinned install deletes `appmanifest_376030.acf`.** Steam's metadata
+    would otherwise keep describing the build the pin replaced, and the staged
+    update cron examples in the README compare exactly that file. Every update
+    job in `conf.d/crontab` and the README carries a
+    `[ -z "${TARGET_MANIFEST_ID}" ]` guard for the same reason; an update job
+    undoes the pin and the drift check only catches it at the next restart.
+  - **A missing redistributable depot is fatal** unless
+    `server/linux64/steamclient.so` is already installed. The server cannot
+    start without it, and writing the pin anyway would make every later start
+    report "Already installed" over an install that crash loops.
+  - **Kept staging is labelled with the manifest it was for.**
+    `download_depot` unpacks into `content/app_376030/depot_376031`, a path
+    with no manifest in it, so a partial download kept for one manifest would
+    otherwise be written over by the next one and handed on as verified. The
+    marker sits next to the depot directory, never inside it.
+  - **Delete the pin file before the first copy, never only after the last
+    one.** Between the two copies the server directory holds a mix of two
+    builds; a pin file that survives an aborted swap makes the next start
+    report "Already installed" over half-swapped files.
+  - A changed build id or binary checksum means something replaced the pinned
+    files (a cron `arkmanager update`, a repair); the next start detects that
+    and re-applies the pin. The checksum covers only the server executable, not
+    the ~22GB of content, and the README says so.
+  - Un-pinning deletes that stale bookkeeping so the normal install path runs a
+    full validate back to the current build. Without it arkmanager reads a
+    stale build id and calls the downgraded server up to date.
+  - `arkmanager run` does **not** auto-update (`doRun` never calls `doUpdate`);
+    `start`/`restart` do, via `arkAutoUpdateOnStart`. Forcing
+    `UPDATE_ON_START=false` while pinned covers those and the cron environment,
+    it is not what holds the pin on a normal start.
+  - `download_depot` never learned Steam's 2021 manifest request codes and can
+    silently deliver the current build instead. The install verifies the
+    manifest steamcmd reports and the `depotcache/<depot>_<manifest>.manifest`
+    it leaves behind, and refuses to copy anything it cannot confirm.
+  - Verified against real steamcmd on Linux, do not "simplify" these away:
+    - **`download_depot` needs a real Steam login.** Anonymous gets
+      `missing license for depot (No subscription)` for depot 376031, although
+      `app_update 376030` works anonymously. The entrypoint refuses to start
+      with a pin and an anonymous `STEAM_LOGIN`.
+    - **`+app_info_update 1` alone is not enough**, only a following
+      `+app_info_print <appid>` puts the app info in the cache that
+      `download_depot` needs. Without it the first pinned install in a fresh
+      container dies with `missing app info (Missing configuration)`.
+    - **The path in the completion line is unusable**, it comes out as
+      `"/home/steam/steamcmd/linux32\steamapps\content\app_376030\depot_1006"`
+      with mixed separators. Read only the manifest id from that line and
+      locate the directory with `find`.
+    - **The depot lands under `/home/steam/steamcmd/linux32/steamapps/...`**,
+      not under `${STEAM_HOME}/Steam`, so the disk gate measures the steamcmd
+      directory. A mounted Steam session volume never holds the staging copy.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 - **`bin/steam-entrypoint.sh` is sourceable.** Everything above the
@@ -167,8 +231,11 @@ downstream compose files and scripts.
   the directory setup, the cluster config guard, the Discord config migration
   and its hardcoded webhook warning, the disk space check, the appended
   arkmanager.cfg blocks, the backup budget and crash restart validation, the
-  `running-instances` state file the healthcheck reads). It never installs a
-  server, arkmanager and steamcmd are stubbed in `tests/stubs`.
+  `running-instances` state file the healthcheck reads, the manifest pin
+  bookkeeping, and `install_pinned_manifest` end to end against a steamcmd stub
+  that mimics the real one). It never installs a server, arkmanager and
+  steamcmd are stubbed in `tests/stubs`; `tests/pinned_install.bats` writes its
+  own steamcmd stub because the code calls it by absolute path.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
   failing non-final `[[ ... ]]` does not fail the test, so those assertions
