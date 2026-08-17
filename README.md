@@ -199,7 +199,7 @@ warning, the save, the optional backup and the process shutdown.
 
 `MAX_BACKUP_SIZE_MB` caps the size of `/app/backup`. After every backup
 arkmanager walks the directory newest first and deletes everything past the
-budget, with a plain `rm` and no log line. Four things to know before you set
+budget, with a plain `rm` and no log line. Five things to know before you set
 it:
 
 Whether you have a cap today depends on how old your volume is. The bundled
@@ -219,9 +219,13 @@ The value has to be a plain number of megabytes, no `2GB`, no leading zero
 (bash would read that as octal). The container refuses to start otherwise
 instead of letting every backup fail arithmetically.
 
-If you set `arkMaxBackupSizeMB` by hand in
-`/app/arkmanager/instances/main.cfg`, your edit wins. arkmanager sources the
-instance config after the global one, so the variable never gets a say.
+Two hand edits beat the variable. `arkMaxBackupSizeMB` in
+`/app/arkmanager/instances/main.cfg`, because arkmanager sources the instance
+config after the global one. And `arkMaxBackupSizeGB` anywhere, because
+arkmanager multiplies it into the megabyte value before it looks at the budget,
+and we ship that setting commented out one line below the one this variable
+drives. Startup warns you about both, comment them out to put the variable back
+in charge.
 
 ### Crash restarts
 
@@ -242,9 +246,10 @@ roughly every five seconds, with no backoff and no cap, so a genuinely broken
 install just burns CPU until you notice. To get out, remove the variable and
 recreate the container (`docker compose up -d --force-recreate`).
 
-The value has to be lowercase `true`. `True` does nothing, and arkmanager itself
-treats any non-empty value as "on", which is why this image only forwards an
-exact `true`.
+The value has to be lowercase `true` or `false`. arkmanager treats any non-empty
+value as "on", so this image only ever forwards an exact `true`, and the
+container refuses to start on anything else rather than let `True` or `yes` look
+accepted and do nothing.
 
 ### Data layout
 

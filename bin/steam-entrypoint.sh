@@ -212,8 +212,22 @@ function add_block_to_arkmanager_cfg() {
   local -r description="${1}"
   local -r marker="${2}"
   local -r block="${3}"
-  local -r config="${ARK_TOOLS_DIR}/arkmanager.cfg"
-  local staged
+  local config staged
+
+  # the marker decides whether the block is already there, so a marker the
+  # block never contains would append it again on every start
+  case "${block}" in
+    *"${marker}"*) ;;
+    *)
+      echo "ERROR: marker '${marker}' does not occur in the ${description} block."
+      exit 1
+      ;;
+  esac
+
+  # a user may have replaced the config with a symlink - work on its target,
+  # otherwise cp recreates the symlink over the staged file and the append
+  # writes straight into the live config the rename is meant to protect
+  config="$(readlink -f "${ARK_TOOLS_DIR}/arkmanager.cfg")"
 
   # match the generated assignment, not the variable name: a user comment
   # mentioning the variable must not count as "already migrated"
@@ -230,17 +244,13 @@ function add_block_to_arkmanager_cfg() {
     return
   fi
 
-  if ! cp -a "${config}" "${staged}" || ! printf '\n%s\n' "${block}" >> "${staged}"; then
+  if ! cp -p "${config}" "${staged}" || ! printf '\n%s\n' "${block}" >> "${staged}"; then
     echo "WARNING: could not write ${staged}, continuing without ${description}..."
-    rm -f "${staged}"
-
-    return
+  elif ! mv "${staged}" "${config}"; then
+    echo "WARNING: could not replace ${config}, continuing without ${description}..."
   fi
 
-  mv "${staged}" "${config}" || {
-    echo "WARNING: could not replace ${config}, continuing without ${description}..."
-    rm -f "${staged}"
-  }
+  rm -f "${staged}"
 }
 
 # the block lands in the config verbatim, arkmanager expands it when it sources
@@ -319,6 +329,45 @@ function assert_valid_max_backup_size() {
     echo "       Use 0 to disable the pruning of old backups."
     exit 1
   fi
+}
+
+# arkmanager arms the watchdog on any non-empty value, so the config only
+# forwards a literal true - without this every other spelling looks accepted
+# and does nothing
+function assert_valid_always_restart_on_crash() {
+  case "${ALWAYS_RESTART_ON_CRASH}" in
+    ""|"true"|"false") ;;
+    *)
+      echo "ERROR: ALWAYS_RESTART_ON_CRASH='${ALWAYS_RESTART_ON_CRASH}' must be 'true' or 'false' (lowercase)."
+      exit 1
+      ;;
+  esac
+}
+
+# upstream multiplies arkMaxBackupSizeGB into arkMaxBackupSizeMB before it
+# looks at the budget, and arkmanager sources the instance config last, so
+# either one silently wins over the environment variable
+function warn_on_overridden_backup_budget() {
+  local config
+  local -r instance_config="${ARK_TOOLS_DIR}/instances/main.cfg"
+
+  # a bare 'return' would hand the failed test's status to the startup
+  # sequence, and set -e would kill the container before it ever starts
+  [[ -n "${MAX_BACKUP_SIZE_MB}" ]] || return 0
+
+  for config in "$(readlink -f "${ARK_TOOLS_DIR}/arkmanager.cfg")" "${instance_config}"; do
+    [[ -f "${config}" ]] || continue
+
+    if grep -qE '^[[:space:]]*arkMaxBackupSizeGB=' "${config}"; then
+      echo "WARNING: ${config} assigns arkMaxBackupSizeGB, which overrides MAX_BACKUP_SIZE_MB."
+      echo "         Comment the line out to put the environment variable in charge."
+    fi
+
+    if [[ "${config}" == "${instance_config}" ]] && grep -qE '^[[:space:]]*arkMaxBackupSizeMB=' "${config}"; then
+      echo "WARNING: ${config} assigns arkMaxBackupSizeMB, which overrides MAX_BACKUP_SIZE_MB."
+      echo "         Comment the line out to put the environment variable in charge."
+    fi
+  done
 }
 
 function remake_sub_instances_cfg() {
@@ -434,6 +483,7 @@ trap '[ -z "${STAGED_CONFIG}" ] || rm -f "${STAGED_CONFIG}"; exit 143' TERM INT
 parse_sub_instance_keys
 assert_valid_sub_instance_ports
 assert_valid_max_backup_size
+assert_valid_always_restart_on_crash
 
 args=("$@")
 if [[ "${ENABLE_CROSSPLAY}" == "true" ]]; then
@@ -497,6 +547,7 @@ add_discord_to_arkmanager_cfg
 warn_on_hardcoded_discord_webhook
 add_backup_retention_to_arkmanager_cfg
 add_always_restart_on_crash_to_arkmanager_cfg
+warn_on_overridden_backup_budget
 remake_sub_instances_cfg
 
 # multi-instance needs per-instance autorestart files: the historic template
