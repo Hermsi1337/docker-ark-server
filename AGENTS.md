@@ -41,6 +41,8 @@ downstream compose files and scripts.
 | `.github/workflows/build-and-deploy.yml` | "Build and Publish" — builds and pushes to all three registries |
 | `.github/workflows/deploy-preview.yml` | "Build PR Preview" — builds PRs, pushes `pr-<n>` for same-repo PRs |
 | `.github/workflows/update-arkmanager-pin.yml` | "Update arkmanager pin" — weekly bump PR for the `ARK_TOOLS_VERSION` default |
+| `.github/workflows/lint.yml` | "Lint" — shellcheck, yamllint and hadolint on PRs and `master` |
+| `.yamllint` / `.hadolint.yaml` | Linter rule config; every disabled rule carries the reason it is off |
 | `.github/dependabot.yml` | Weekly `github-actions` version updates |
 
 ## CI/CD
@@ -73,6 +75,21 @@ downstream compose files and scripts.
   events); close/reopen the PR to run it, or rely on the master build after
   merge. The actions it uses are themselves covered by Dependabot.
 
+**Lint** (`lint.yml`):
+
+- Triggers on `pull_request` against `master` and on pushes to `master`;
+  concurrency-guarded per ref.
+- Three independent jobs: shellcheck over `bin/*.sh` and
+  `deploy/steam-login.sh`, yamllint over `.github/workflows/` and
+  `deploy/docker-compose.yml`, hadolint over the `Dockerfile`.
+- Kept separate from the publish workflows on purpose so a lint failure can
+  never block a release. The publish workflows keep their own `bash -n`
+  syntax check as the hard gate.
+- Suppressions are targeted, never blanket: a per-line
+  `# shellcheck disable=SCxxxx` or `# hadolint ignore=DLxxxx` with the reason
+  above it, or a rule switched off in `.yamllint` / `.hadolint.yaml` with a
+  comment explaining the call. If you add one, write down why.
+
 **Required repository secrets:**
 
 | Secret | Used for |
@@ -92,6 +109,10 @@ downstream compose files and scripts.
   `ARG ARK_TOOLS_VERSION="v1.6.69"` so local/manual builds are deterministic.
   The Dockerfile picks `--tag` vs `--commit` for `netinstall.sh` based on a
   leading `v`. CI overrides the ARG with a resolved commit SHA at build time.
+- **`SHELL ["/bin/bash", "-o", "pipefail", "-c"]` stays above the install
+  `RUN`.** The `RUN` pipes `netinstall.sh` into `bash`. Without `pipefail` a
+  failed download exits 0, the build happily continues and the image ships
+  without arkmanager.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
 

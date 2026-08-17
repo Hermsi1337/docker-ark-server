@@ -39,6 +39,14 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
 
 ENV         ARK_TOOLS_DIR="${ARK_SERVER_VOLUME}/arkmanager"
 
+# pipefail so a failed netinstall.sh download cannot be swallowed by the pipe
+# and ship an image without arkmanager
+SHELL       ["/bin/bash", "-o", "pipefail", "-c"]
+
+# --no-install-recommends is deliberately not used: the recommended packages
+# pull in runtime dependencies of the ARK server binary and dropping them
+# would only surface as a broken server at container start.
+# hadolint ignore=DL3015
 RUN         set -x && \
             apt-get update && \
             apt-get install -y  perl-modules \
@@ -53,10 +61,10 @@ RUN         set -x && \
             && \
             opt=$([ "${ARK_TOOLS_VERSION#v}" != "${ARK_TOOLS_VERSION}" ] && echo -n "--tag" || echo -n "--commit") && \
             curl -sL https://raw.githubusercontent.com/arkmanager/ark-server-tools/refs/heads/master/netinstall.sh | \
-            bash -s ${USER} ${opt}=${ARK_TOOLS_VERSION} && \
+            bash -s "${USER}" "${opt}=${ARK_TOOLS_VERSION}" && \
             ln -s /usr/local/bin/arkmanager /usr/bin/arkmanager && \
-            install -d -o ${USER} ${ARK_SERVER_VOLUME} && \
-            su ${USER} -c "bash -x ${STEAMCMDDIR}/steamcmd.sh +login anonymous +quit" && \
+            install -d -o "${USER}" "${ARK_SERVER_VOLUME}" && \
+            su "${USER}" -c "bash -x ${STEAMCMDDIR}/steamcmd.sh +login anonymous +quit" && \
             apt-get -qq autoclean && apt-get -qq autoremove && apt-get -qq clean && \
             rm -rf /tmp/* /var/cache/*
 

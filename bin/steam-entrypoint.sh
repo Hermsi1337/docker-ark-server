@@ -39,6 +39,7 @@ function may_update() {
   ${ARKMANAGER} update @main "${UPDATE_ARGS[@]}" "${BETA_ARGS[@]}"
 }
 
+# shellcheck disable=SC2329  # invoked indirectly via 'trap stop_server TERM INT'
 function stop_server() {
   # ignore further stop signals: a second TERM would re-enter this handler
   # and restart the whole broadcast/stop/backup sequence

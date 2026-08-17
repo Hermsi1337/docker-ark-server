@@ -1,0 +1,16 @@
+---
+ignored:
+  # The image has always published MAINTAINER as its label key. Renaming it to
+  # the lowercase form hadolint prefers would change what "docker inspect"
+  # reports for every published tag, with no functional gain.
+  - DL3048
+
+  # SERVER_PASSWORD, ADMIN_PASSWORD and STEAM_LOGIN are the documented
+  # configuration surface of this image, not baked-in secrets. The defaults are
+  # placeholders and the README tells users to override them.
+  - DL3064
+
+  # Pinning apt versions works against the point of this image: every publish
+  # rebuilds with no-cache on a freshly pulled base so it ships current
+  # ARK/Steam state. A pinned package list would go stale silently.
+  - DL3008
