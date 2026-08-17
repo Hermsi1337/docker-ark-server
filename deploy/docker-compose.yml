@@ -37,8 +37,8 @@ services:
       - PUID=${PUID:-}
       - PGID=${PGID:-}
       - ARK_EXTRA_OPTS=${ARK_EXTRA_OPTS}
-      # # Set DISCORD_WEBHOOK_URL in your .env file to get notifications,
-      # # see the README section "Discord notifications"
+      # Set DISCORD_WEBHOOK_URL in your .env file to get notifications,
+      # see the README section "Discord notifications"
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
       # # Cluster / multi-map settings, see the README section
       # # "Cluster and multi-map support" for all SUB_<KEY>_* variables
