@@ -150,6 +150,24 @@ EOF
   fi
 }
 
+function add_discord_to_arkmanager_cfg() {
+  local -r config="${ARK_TOOLS_DIR}/arkmanager.cfg"
+  # the historic template ships a commented discordWebhookURL example, so
+  # match on the environment variable instead of the setting name
+  if ! grep -q 'DISCORD_WEBHOOK_URL' "${config}"; then
+    echo "Adding Discord notification settings to the existing arkmanager.cfg ..."
+    if ! cat <<'EOF' >> "${config}"
+
+# Discord notifications - active only when DISCORD_WEBHOOK_URL is set (see README)
+[ -z "${DISCORD_WEBHOOK_URL}" ] || discordWebhookURL="${DISCORD_WEBHOOK_URL}"
+[ -z "${NOTIFY_TEMPLATE}" ] || notifyTemplate="${NOTIFY_TEMPLATE}"
+EOF
+    then
+      echo "WARNING: could not append Discord notification settings to ${config} (read-only?), continuing..."
+    fi
+  fi
+}
+
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
 # variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
 # arkmanager instance name - restrict keys to a safe charset and fail loudly
@@ -361,6 +379,7 @@ copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager.cfg" "${ARK_TOOLS_DIR}/arkma
 copy_missing_file "${TEMPLATE_DIRECTORY}/arkmanager-user.cfg" "${ARK_TOOLS_DIR}/instances/main.cfg"
 
 add_cluster_to_arkmanager_cfg
+add_discord_to_arkmanager_cfg
 remake_sub_instances_cfg
 
 # multi-instance needs per-instance autorestart files: the historic template

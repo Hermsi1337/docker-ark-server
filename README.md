@@ -138,9 +138,37 @@ Basic configuration is done with environment variables:
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
 | SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before the initial server installation |
+| DISCORD_WEBHOOK_URL | `empty` | Discord webhook to notify on start, stop, crash and restart, see [Discord notifications](#discord-notifications) |
+| NOTIFY_TEMPLATE | `empty` | Format of the notification message, see [Discord notifications](#discord-notifications) |
 | CLUSTER_ID | `empty` | Setting a cluster id enables cluster mode (item/character transfer) and requires a volume mounted at `/cluster`, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | SUB_INSTANCE_KEYS | `empty` | Additional map instances to run in this container, see [Cluster and multi-map support](#cluster-and-multi-map-support) |
 | DEBUG | `empty` | Set to `true` for verbose (`set -x`) entrypoint logging |
+
+### Discord notifications
+
+arkmanager can post to a Discord webhook when the server starts, stops,
+crashes or gets restarted. Create a webhook in your Discord channel settings
+(Integrations, Webhooks) and pass its URL:
+
+```yaml
+services:
+  server:
+    environment:
+      - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/123456789/abcdef
+      #- NOTIFY_TEMPLATE=Message from instance {instance} on server {server}: {msg}
+```
+
+`NOTIFY_TEMPLATE` is optional and changes how the message is formatted.
+Available placeholders are `{instance}`, `{server}` and `{msg}`. Leave both
+variables empty (the default) and nothing is sent, exactly as before.
+
+The webhook URL is a secret, anyone who has it can post to your channel. Keep
+it in your `.env` file or a compose secret, not in a committed
+`docker-compose.yml`.
+
+This also works on existing volumes. The startup adds the two settings to an
+`arkmanager.cfg` that was copied there by an older image version, your own
+changes to that file stay untouched.
 
 ### Graceful shutdown
 

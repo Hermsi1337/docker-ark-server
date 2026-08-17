@@ -37,6 +37,9 @@ services:
       - PUID=${PUID:-}
       - PGID=${PGID:-}
       - ARK_EXTRA_OPTS=${ARK_EXTRA_OPTS}
+      # # Discord notifications, see the README section "Discord notifications"
+      #- DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      #- NOTIFY_TEMPLATE=${NOTIFY_TEMPLATE}
       # # Cluster / multi-map settings, see the README section
       # # "Cluster and multi-map support" for all SUB_<KEY>_* variables
       #- CLUSTER_ID=MyCluster
