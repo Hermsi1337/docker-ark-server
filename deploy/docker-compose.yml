@@ -40,6 +40,11 @@ services:
       # Set DISCORD_WEBHOOK_URL in your .env file to get notifications,
       # see the README section "Discord notifications"
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      # Size budget for /app/backup, see the README section "Backup retention"
+      - MAX_BACKUP_SIZE_MB=${MAX_BACKUP_SIZE_MB:-}
+      # Restart an instance that crashes before it finished starting,
+      # see the README section "Crash restarts" first, this can loop
+      - ALWAYS_RESTART_ON_CRASH=${ALWAYS_RESTART_ON_CRASH:-}
       # # Cluster / multi-map settings, see the README section
       # # "Cluster and multi-map support" for all SUB_<KEY>_* variables
       #- CLUSTER_ID=MyCluster
