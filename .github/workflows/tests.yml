@@ -1,0 +1,45 @@
+name: Tests
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+# Supersede older runs of the same pull request, but let every master commit
+# finish so a quick second merge does not leave the first one untested.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  bats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # the bats suite only parses the function half of the entrypoint, so the
+      # startup half needs its own syntax check
+      - name: Check shell script syntax
+        run: |
+          find bin tests -type f \( -name '*.sh' -o -name '*.bash' -o -path 'tests/stubs/*' \) -print0 |
+            xargs -0 -r -n1 bash -n
+
+      - name: Install bats
+        uses: bats-core/bats-action@4.0.0
+        with:
+          bats-version: 1.14.0
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+
+      - name: Run the bats suite
+        run: bats tests

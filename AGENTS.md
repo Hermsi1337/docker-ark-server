@@ -38,11 +38,13 @@ downstream compose files and scripts.
 | `bin/steam-entrypoint.sh` | Server bootstrap/run as the `steam` user |
 | `conf.d/` | Templates copied into the image (`arkmanager.cfg`, `arkmanager-user.cfg`, `crontab`) |
 | `deploy/` | Example `docker-compose.yml` + `example.env` for end users |
+| `tests/` | bats suite for the pure-bash parts of `bin/steam-entrypoint.sh` |
 | `.github/workflows/build-and-deploy.yml` | "Build and Publish" — builds and pushes to all three registries |
 | `.github/workflows/deploy-preview.yml` | "Build PR Preview" — builds PRs, pushes `pr-<n>` for same-repo PRs |
 | `.github/workflows/update-arkmanager-pin.yml` | "Update arkmanager pin" — weekly bump PR for the `ARK_TOOLS_VERSION` default |
 | `.github/workflows/lint.yml` | "Lint" — shellcheck, yamllint and hadolint on PRs and `master` |
 | `.yamllint` | yamllint rule config; every disabled rule carries the reason it is off |
+| `.github/workflows/tests.yml` | "Tests" — runs the bats suite on pull requests and on `master` |
 | `.github/dependabot.yml` | Weekly `github-actions` version updates |
 
 ## CI/CD
@@ -97,6 +99,19 @@ downstream compose files and scripts.
   write down why, and make sure the reason is actually true.
 - `stop_server` carries both `SC2317` and `SC2329`. Same finding, shellcheck
   renumbered it in 0.10.0, and contributors on Ubuntu 24.04 have 0.9.x.
+**Tests** (`tests.yml`):
+
+- Triggers on `pull_request` against `master`, on pushes to `master` and via
+  `workflow_dispatch`. Only pull request runs get cancelled by a newer push,
+  every master commit finishes.
+- Runs `bash -n` over the shell scripts, then the bats suite. The syntax check
+  is not redundant: sourcing the entrypoint never parses the startup half, so
+  without it a broken startup sequence passes the suite.
+- bats comes from `bats-core/bats-action` with a pinned version. The suite
+  needs bats 1.4.0 or newer (`BATS_TEST_TMPDIR`), which is why the distro
+  package is not used.
+- Nothing here builds an image or talks to the network, so it finishes in
+  seconds.
 
 **Required repository secrets:**
 
@@ -123,9 +138,24 @@ downstream compose files and scripts.
   without arkmanager.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
+- **`bin/steam-entrypoint.sh` is sourceable.** Everything above the
+  `BASH_SOURCE` guard is function definitions, everything below it is the
+  startup sequence. The test suite sources the script to get at the functions,
+  so new startup code goes below the guard and stays in the same order.
 
 ## Common tasks
 
+- **Run the tests:** `bats tests` from the repository root
+  (`brew install bats-core`, needs 1.4.0 or newer). The suite sources
+  `bin/steam-entrypoint.sh` and exercises the pure-bash parts (sub instance
+  keys and ports, generated sub instance configs, the `Game.ini` symlink
+  healing, mod id collection, install detection, the directory setup, the
+  cluster config guard, the disk space check). It never installs a server,
+  arkmanager and steamcmd are stubbed in `tests/stubs`.
+- **Writing tests:** assert with `[ ... ]` or the helpers in
+  `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
+  failing non-final `[[ ... ]]` does not fail the test, so those assertions
+  pass locally and only bite in CI.
 - **Bump the arkmanager pin:** automated — the "Update arkmanager pin"
   workflow opens a weekly PR when a new ark-server-tools release exists;
   review and merge it. Manual fallback: check
