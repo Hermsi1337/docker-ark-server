@@ -269,8 +269,14 @@ instance this container manages (`main` plus one `sub.<KEY>` per entry in
 * **failing** (so `starting`, see below) while the container is still installing,
   updating or has not launched the servers yet
 
-Healthy means the server processes are up, not that players can already join. An
-instance that is loading a map has a process but no open port for a few minutes.
+**Healthy is not "ready for players".** It means the install is done and a server
+process is up, and loading the map takes minutes on top of that. On a test run
+the container went healthy about 10 minutes into a fresh install while the log
+had not printed `Server is up` yet, and on an existing install it went healthy
+within seconds of the container start with the map taking another 85 seconds. So
+`depends_on: condition: service_healthy` can start a dependent service minutes
+before the first player can connect. Anything that needs a reachable server
+should retry instead of trusting the gate.
 
 Defaults baked into the image:
 
