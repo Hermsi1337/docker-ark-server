@@ -142,7 +142,7 @@ Basic configuration is done with environment variables:
 | UDP_SOCKET_PORT | 7778 | Raw UDP socket port (always game client port +1) |
 | RCON_PORT | 27020 | Exposed RCON port |
 | SERVER_LIST_PORT | 27015 | Exposed server-list (query) port |
-| SKIP_DISK_CHECK | false | Skip the free-disk-space check (~25GB) before installing the server files |
+| SKIP_DISK_CHECK | false | Skip the free-disk-space check before installing the server files (~25GB, ~50GB for a first install with `TARGET_MANIFEST_ID`) |
 | DISCORD_WEBHOOK_URL | `empty` | Discord webhook to notify on start, stop, crash and restart, see [Discord notifications](#discord-notifications) |
 | DISABLE_HEALTHCHECK | false | Set to `true` to make the [health check](#health-check) always report healthy, for UIs that do not expose `--no-healthcheck` |
 | HEALTHCHECK_REQUIRE_ALL_INSTANCES | false | Report unhealthy as soon as one instance is down, instead of only when all of them are, see [health check](#health-check) |
@@ -698,7 +698,14 @@ the one that broke.
 * An explicit `arkmanager update` (for example from one of the
   [crontab](#add-cronjobs) examples) still updates and undoes the pin. Comment
   those jobs out while you are pinned. If one runs anyway, the next start
-  notices the changed Steam build id, says so, and re-applies the pin.
+  notices, says so, and re-applies the pin.
+
+  What that check actually is: the image records the Steam build id and a
+  checksum of `ShooterGameServer` when it pins, and compares both on every
+  start. So it catches anything that replaces the server binary or Steam's
+  records. It does not checksum the other ~22GB, so a change limited to game
+  content with the binary left alone goes unnoticed. It is a tripwire for the
+  update paths that exist in this image, not a full integrity check.
 * A backup is taken before the server binaries are swapped, unless you set
   `PRE_UPDATE_BACKUP=false`. If the backup fails, the swap is refused: an older
   build rewrites the saves it loads on the first autosave.
@@ -730,10 +737,13 @@ of reach with `steamcmd` and no setting here helps.
 
 **Disk space:** `download_depot` ignores the install directory and always
 stages the full depot below `/home/steam` first, so a pinned install needs
-~25GB there on top of the ~25GB in the server volume, and on a normal Docker
-host both are the same disk, so ~50GB. The staging copy is removed as soon as
-it has been moved into place. If you mounted a Steam session volume at
-`/home/steam/Steam`, the staging copy may land there.
+~25GB there on top of the ~25GB in the server volume. On a normal Docker host
+both are the same disk, so the first pinned install wants ~50GB free and every
+later re-pin ~25GB. The staging copy is removed once it has been moved into
+place, and also when an install gives up, except for a download that was cut
+short, which is kept so a restart can resume it (the error names the directory
+and its size). If you mounted a Steam session volume at `/home/steam/Steam`,
+the staging copy may land there.
 
 ## Cluster and multi-map support
 

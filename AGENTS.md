@@ -159,10 +159,17 @@ downstream compose files and scripts.
   - Bypassing `app_update` means no `steamapps/appmanifest_376030.acf` is
     written and the depot ships no `version.txt`, so none of arkmanager's
     version bookkeeping describes a pinned install. `server/.ark_manifest_pin`
-    is the image's own record (pinned manifest plus the Steam build id at pin
-    time) and the only thing that proves a pinned install completed.
-  - A changed build id means something ran `app_update` behind the pin (a cron
-    `arkmanager update`); the next start detects that and re-applies the pin.
+    is the image's own record (pinned manifest, Steam build id and a `cksum` of
+    `ShooterGameServer` at pin time) and the only thing that proves a pinned
+    install completed.
+  - **Delete the pin file before the first copy, never only after the last
+    one.** Between the two copies the server directory holds a mix of two
+    builds; a pin file that survives an aborted swap makes the next start
+    report "Already installed" over half-swapped files.
+  - A changed build id or binary checksum means something replaced the pinned
+    files (a cron `arkmanager update`, a repair); the next start detects that
+    and re-applies the pin. The checksum covers only the server executable, not
+    the ~22GB of content, and the README says so.
   - Un-pinning deletes that stale bookkeeping so the normal install path runs a
     full validate back to the current build. Without it arkmanager reads a
     stale build id and calls the downgraded server up to date.

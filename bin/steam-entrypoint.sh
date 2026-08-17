@@ -258,9 +258,21 @@ function read_pin_field() {
 
 function installed_steam_buildid() {
   local -r ACF="${ARK_SERVER_VOLUME}/server/steamapps/appmanifest_${ARK_APP_ID}.acf"
+  local BUILDID
 
-  [[ -f "${ACF}" ]] || return 0
-  sed -n 's/.*"buildid"[^0-9]*"\([0-9]*\)".*/\1/p' "${ACF}" | head -n1
+  [[ -f "${ACF}" ]] || { echo "none"; return 0; }
+
+  # an appmanifest that exists but cannot be parsed (a torn write, say) must
+  # not read the same as no appmanifest at all, or it passes as "unchanged"
+  BUILDID="$(sed -n 's/.*"buildid"[^0-9]*"\([0-9]*\)".*/\1/p' "${ACF}" | head -n1)"
+  echo "${BUILDID:-unreadable}"
+}
+
+function server_binary_fingerprint() {
+  local -r SERVER_EXEC="${ARK_SERVER_VOLUME}/server/ShooterGame/Binaries/Linux/ShooterGameServer"
+
+  [[ -s "${SERVER_EXEC}" ]] || { echo "none"; return 0; }
+  cksum < "${SERVER_EXEC}" | awk '{print $1"-"$2}'
 }
 
 function needs_install() {
@@ -277,19 +289,25 @@ function needs_install() {
       return 0
     fi
 
-    # arkmanager rewrites the appmanifest every time it runs app_update, e.g.
-    # from a cron 'arkmanager update' - a changed build id is the only trace
-    # left when something replaced the pinned binaries behind our back
-    if [[ "$(read_pin_field buildid)" != "$(installed_steam_buildid)" ]]; then
-      echo "The Steam build id changed since this server was pinned - something updated it, re-applying the pin ..."
-      return 0
-    fi
-
     # download_depot writes no appmanifest and the ARK depot ships no
     # version.txt, so the pin file plus the unpacked depot is the only proof
     # that a pinned install ever completed
     if [ ! -s "${SERVER_EXEC}" ] || [ ! -d "${SERVER_DIR}/Engine" ]; then
       echo "The pinned server files are not complete ..."
+      return 0
+    fi
+
+    # arkmanager rewrites the appmanifest every time it runs app_update, e.g.
+    # from a cron 'arkmanager update'
+    if [[ "$(read_pin_field buildid)" != "$(installed_steam_buildid)" ]]; then
+      echo "The Steam build id changed since this server was pinned - something updated it, re-applying the pin ..."
+      return 0
+    fi
+
+    # a repair that rewrites the binaries without touching Steam's bookkeeping
+    # leaves the build id alone, so compare the binary itself as well
+    if [[ "$(read_pin_field binary)" != "$(server_binary_fingerprint)" ]]; then
+      echo "The server binary changed since this server was pinned - something replaced it, re-applying the pin ..."
       return 0
     fi
 
@@ -324,6 +342,16 @@ function filesystem_of() {
   df -P "${1}" 2>/dev/null | awk 'NR==2 {print $1}'
 }
 
+function depot_staging_root() {
+  local FOUND
+
+  # steamcmd does not always stage below the same directory, and a mounted
+  # Steam session volume can move it to another filesystem - measure a
+  # steamapps directory it created itself before falling back to a guess
+  FOUND="$(find "${STEAM_HOME}" -maxdepth 4 -type d -name steamapps -print -quit 2>/dev/null)"
+  echo "${FOUND:-${STEAM_HOME}}"
+}
+
 function assert_free_disk_space_on() {
   local -r TARGET="${1}"
   local -r REQUIRED_MB="${2}"
@@ -344,7 +372,7 @@ function assert_free_disk_space() {
   # a fresh ARK install needs roughly 25GB (plus staging/backup headroom)
   local -r REQUIRED_MB="25000"
   local -a TARGETS=() AMOUNTS=()
-  local CANDIDATE NEEDED SEEN_EARLIER
+  local NEEDED SEEN_EARLIER
   local -i I J
 
   if [[ "${SKIP_DISK_CHECK}" == "true" ]]; then
@@ -361,15 +389,10 @@ function assert_free_disk_space() {
   fi
 
   # download_depot ignores force_install_dir and always stages the full depot
-  # below steamcmd's home first, on every pinned install. Which directory it
-  # picks there is not fixed, and a mounted Steam session volume can put one
-  # of them on a different filesystem, so require the space on both.
+  # below steamcmd's home first, on every pinned install
   if [[ -n "${TARGET_MANIFEST_ID}" ]]; then
-    for CANDIDATE in "${STEAM_HOME}" "${STEAM_HOME}/Steam"; do
-      [[ -d "${CANDIDATE}" ]] || continue
-      TARGETS+=("${CANDIDATE}")
-      AMOUNTS+=("${REQUIRED_MB}")
-    done
+    TARGETS+=("$(depot_staging_root)")
+    AMOUNTS+=("${REQUIRED_MB}")
   fi
 
   # on a default Docker host all of these live on the same device, where only
@@ -462,14 +485,37 @@ function verified_depot_path() {
   echo "${DEPOT_PATH}"
 }
 
+function report_kept_staging() {
+  local DEPOT_DIR
+
+  DEPOT_DIR="$(find_downloaded_depot "${ARK_CONTENT_DEPOT_ID}")"
+  [[ -n "${DEPOT_DIR}" ]] || return 0
+  echo "       The partial download was kept so a restart can resume it:"
+  echo "       ${DEPOT_DIR} ($(du -sh "${DEPOT_DIR}" 2>/dev/null | cut -f1) so far)."
+  echo "       Delete it by hand if you would rather have the disk space back."
+}
+
+function remove_depot_staging() {
+  local -r DEPOT_ID="${1}"
+  local DEPOT_DIR
+
+  DEPOT_DIR="$(find_downloaded_depot "${DEPOT_ID}")"
+  [[ -n "${DEPOT_DIR}" ]] || return 0
+  echo "...removing the staged download in ${DEPOT_DIR}"
+  rm -rf "${DEPOT_DIR}"
+}
+
 function install_depot_files() {
   local -r DEPOT_DIR="${1}"
 
   echo "...moving ${DEPOT_DIR} into ${ARK_SERVER_VOLUME}/server"
   if ! cp -a "${DEPOT_DIR}/." "${ARK_SERVER_VOLUME}/server/"; then
     echo "ERROR: could not copy ${DEPOT_DIR} into ${ARK_SERVER_VOLUME}/server - out of disk space?"
-    echo "       Removing the downloaded depot so the next attempt has room again."
-    rm -rf "${DEPOT_DIR}"
+    echo "       The server directory now holds a half-swapped mix of two builds; the pin was"
+    echo "       already dropped, so the next start reinstalls it from scratch."
+    echo "       Removing the downloaded depots so that attempt has room again."
+    remove_depot_staging "${ARK_CONTENT_DEPOT_ID}"
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
     exit 1
   fi
   # steamcmd never cleans up its download directory, and leaving it behind
@@ -484,13 +530,7 @@ function backup_before_binary_swap() {
   [[ -n "$(find "${SAVED_DIR}" -mindepth 1 -maxdepth 2 -name '*.ark' -print -quit 2>/dev/null)" ]] || return 0
 
   echo "Creating a backup before swapping the server binaries (\$PRE_UPDATE_BACKUP is 'true')..."
-  if ! ${ARKMANAGER} backup @main; then
-    echo "ERROR: the backup failed, refusing to swap the server binaries."
-    echo "       A pin usually moves the server to an older build, and an older build rewrites"
-    echo "       the saves it loads on the first autosave - going ahead risks the world."
-    echo "       Fix the backup, or set PRE_UPDATE_BACKUP=false to swap without one."
-    exit 1
-  fi
+  ${ARKMANAGER} backup @main
 }
 
 function install_pinned_manifest() {
@@ -510,6 +550,9 @@ function install_pinned_manifest() {
     echo "       download_depot was never taught the manifest request codes Steam introduced in 2021,"
     echo "       so for some older manifests it quietly downloads the current build instead."
     echo "       Refusing to install that - it would put the build you are escaping back on disk."
+    echo "       Retrying would fetch the same wrong build, so the download is not kept."
+    remove_depot_staging "${ARK_CONTENT_DEPOT_ID}"
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
     exit 1
   fi
   if (( RESULT != 0 )); then
@@ -518,11 +561,25 @@ function install_pinned_manifest() {
     echo "       Verify the manifest id on https://steamdb.info/depot/${ARK_CONTENT_DEPOT_ID}/manifests/"
     echo "       'Manifest not available' means this account cannot see that manifest - set STEAM_LOGIN"
     echo "       to an account that owns ARK and mount a Steam session (see the README)."
-    echo "       The partial download was kept so a restart can resume it."
+    report_kept_staging
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
     exit 1
   fi
 
-  backup_before_binary_swap
+  if ! backup_before_binary_swap; then
+    echo "ERROR: the backup failed, refusing to swap the server binaries."
+    echo "       A pin usually moves the server to an older build, and an older build rewrites"
+    echo "       the saves it loads on the first autosave - going ahead risks the world."
+    echo "       Fix the backup, or set PRE_UPDATE_BACKUP=false to swap without one."
+    remove_depot_staging "${ARK_CONTENT_DEPOT_ID}"
+    remove_depot_staging "${ARK_REDIST_DEPOT_ID}"
+    exit 1
+  fi
+
+  # from here the server directory is a mix of two builds until the last copy
+  # lands - drop the pin first so an aborted swap can never be mistaken for a
+  # finished one on the next start
+  rm -f "${MANIFEST_PIN_FILE}"
 
   install_depot_files "${CONTENT_DIR}"
   # download_depot hands the files over without the executable bit, unlike the
@@ -539,7 +596,9 @@ function install_pinned_manifest() {
     echo "WARNING: depot ${ARK_REDIST_DEPOT_ID} (Steamworks redistributables) did not download, continuing..."
   fi
 
-  printf 'manifest=%s\nbuildid=%s\n' "${TARGET_MANIFEST_ID}" "$(installed_steam_buildid)" > "${MANIFEST_PIN_FILE}"
+  printf 'manifest=%s\nbuildid=%s\nbinary=%s\n' \
+    "${TARGET_MANIFEST_ID}" "$(installed_steam_buildid)" "$(server_binary_fingerprint)" \
+    > "${MANIFEST_PIN_FILE}"
 }
 
 function add_cluster_to_arkmanager_cfg() {
