@@ -816,16 +816,16 @@ that restarts in a loop therefore does not write a backup on every boot. If
 that backup fails, the start aborts instead of updating without one, and
 `PRE_UPDATE_BACKUP=false` skips it entirely.
 
-**Check your retention limit first.** `arkmanager.cfg` ships
+**Check your retention limit first.** The bundled `arkmanager.cfg` ships
 `arkMaxBackupSizeMB="500"`. arkmanager applies that limit after *every single
 instance backup*, not once per run: it walks the backup directory newest
 first, keeps files up to the limit and deletes everything below it. So the
 tarballs of one `@all` run count against each other. Three maps that carry the
 cluster data each can blow the limit inside a single run and leave you with the
-newest tarball and no history at all. Raise `arkMaxBackupSizeMB` in
-`<your-volume>/arkmanager/arkmanager.cfg` before you turn `BACKUP_CLUSTER` on
-(an environment variable for it is on the way). The container prints the same
-warning on every start while the option is enabled.
+newest tarball and no history at all. Raise it with `MAX_BACKUP_SIZE_MB`
+before you turn `BACKUP_CLUSTER` on, see
+[Backup retention](#backup-retention). The container prints the same warning
+on every start while the option is enabled.
 
 **Budget more stop-grace time.** Copying and compressing the cluster directory
 runs once per instance, on top of the shutdown warning and the world save that

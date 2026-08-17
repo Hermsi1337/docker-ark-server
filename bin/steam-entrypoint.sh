@@ -501,8 +501,8 @@ function resolve_cluster_backup_args() {
   echo "         With sub instances every instance tarball carries its own copy,"
   echo "         and arkmanager prunes ${ARK_SERVER_VOLUME}/backup down to"
   echo "         arkMaxBackupSizeMB (500 by default) after every single instance"
-  echo "         backup. Raise the value in ${ARK_TOOLS_DIR}/arkmanager.cfg first,"
-  echo "         otherwise a backup run can delete your whole backup history."
+  echo "         backup. Raise it with MAX_BACKUP_SIZE_MB first, otherwise a backup"
+  echo "         run can delete your whole backup history."
 }
 
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
