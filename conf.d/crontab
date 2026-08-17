@@ -6,10 +6,13 @@
 SHELL=/bin/bash
 BASH_ENV=/app/environment
 #
-# Backups, updates and restarts can also be scheduled with the BACKUP_CRON,
-# UPDATE_CRON and RESTART_CRON environment variables. Those jobs land in a
-# marked block at the end of this file which is rewritten on every start.
-# Everything outside that block is yours and stays untouched.
+# Backups and updates can also be scheduled with the BACKUP_CRON and
+# UPDATE_CRON environment variables. Those jobs land in a marked block at the
+# end of this file which is rewritten on every start. Everything outside that
+# block is yours and stays untouched.
+#
+# Use either the variables or the examples below, not both, or the job runs
+# twice.
 #
 # Example of job definition:
 # .---------------- minute (0 - 59)

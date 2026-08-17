@@ -31,7 +31,6 @@ ENV         IMAGE_VERSION="${IMAGE_VERSION}" \
             ALWAYS_RESTART_ON_CRASH="" \
             BACKUP_CRON="" \
             UPDATE_CRON="" \
-            RESTART_CRON="" \
             UPDATE_WARN_MINUTES="" \
             SKIP_DISK_CHECK="false" \
             DISCORD_WEBHOOK_URL="" \

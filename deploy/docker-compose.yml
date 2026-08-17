@@ -45,8 +45,9 @@ services:
       # # Scheduled jobs, see the README section "Add cronjobs"
       - BACKUP_CRON=${BACKUP_CRON:-}
       - UPDATE_CRON=${UPDATE_CRON:-}
-      - RESTART_CRON=${RESTART_CRON:-}
       - UPDATE_WARN_MINUTES=${UPDATE_WARN_MINUTES:-}
+      # # Container timezone, cron schedules follow it
+      - TZ=${TZ:-UTC}
       - GAME_MOD_IDS=${GAME_MOD_IDS}
       - PUID=${PUID:-}
       - PGID=${PGID:-}
