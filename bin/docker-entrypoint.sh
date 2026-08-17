@@ -75,11 +75,19 @@ function render_generated_cronjobs() {
   local -i FIX_HEADER=0
   local -i HAS_BLOCK=0
 
+  # arkmanager skips the cluster directory unless the backup is called with
+  # --cluster, so without this the scheduled backups would be the only ones
+  # missing the transfer data
+  local CLUSTER_FLAG=""
+  if [[ "${BACKUP_CLUSTER}" == "true" ]] && [[ -n "${CLUSTER_ID}" ]]; then
+    CLUSTER_FLAG=" --cluster"
+  fi
+
   # @all covers every instance - identical to @main on a single-map server and
   # required on multi-map servers. Only backups are scheduled here: every
   # arkmanager command that stops the server (update, restart) kills the run
   # process this container waits on, which takes the container down with it
-  [[ -z "${BACKUP_CRON}" ]] || JOBS+=("${BACKUP_CRON} arkmanager backup @all >> ${LOG_TARGET} 2>&1")
+  [[ -z "${BACKUP_CRON}" ]] || JOBS+=("${BACKUP_CRON} arkmanager backup @all${CLUSTER_FLAG} >> ${LOG_TARGET} 2>&1")
   GENERATED_CRON_JOB_COUNT=${#JOBS[@]}
 
   if crontab_has_generated_block "${CRONTAB_FILE}"; then

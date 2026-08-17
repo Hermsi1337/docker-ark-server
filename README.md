@@ -560,7 +560,9 @@ A few things worth knowing:
 * Backups are capped by `arkMaxBackupSizeMB="500"` in
   `<your-volume>/arkmanager/arkmanager.cfg`. At roughly 1-2MB per backup that
   is a few hundred of them, so `*/15 * * * *` (96 per day) keeps about three
-  to five days of history before the oldest ones get deleted.
+  to five days of history before the oldest ones get deleted. A backup with
+  `BACKUP_CLUSTER=true` is a good deal bigger, see
+  [Cluster backups](#cluster-backups).
 * Nothing serializes cron jobs and nothing locks, so keep your own jobs clear
   of the backup window.
 * There is no `UPDATE_CRON` or `RESTART_CRON`, on purpose. In this container
@@ -597,11 +599,12 @@ vim "${HOME}/ark-server/crontab"
 
 Jobs run as the `steam` user.
 
-Cron jobs are not covered by `BACKUP_CLUSTER`. Add `--cluster` to the backup
-job yourself if you want the transfer data in `/cluster` included, and read
-[Cluster backups](#cluster-backups) first. The crontab template is only copied
-when `<your-volume>/crontab` does not exist yet, so on an existing volume no
-example ever reaches you, you have to edit the file by hand.
+With `BACKUP_CLUSTER=true` the generated job gets `--cluster` and the block
+above reads `arkmanager backup @all --cluster`, see
+[Cluster backups](#cluster-backups). Jobs you wrote yourself are yours, add the
+flag there by hand. The crontab template is only copied when
+`<your-volume>/crontab` does not exist yet, so on an existing volume no example
+ever reaches you either.
 
 The container environment is exported to `/app/environment` on every start and
 loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
@@ -797,10 +800,11 @@ unhealthy about five minutes after the last one is gone.
 `--cluster`. Without the flag your worlds are backed up but the uploaded
 characters, dinos and items in `/cluster` are not.
 
-Set `BACKUP_CLUSTER=true` (needs `CLUSTER_ID`) and the backups this image
-creates on its own include them, that is `BACKUP_ON_STOP` and the pre-update
-backup of `UPDATE_ON_START`. It is off by default, and the two paragraphs
-below are why. For a manual backup pass the flag yourself:
+Set `BACKUP_CLUSTER=true` (needs `CLUSTER_ID`) and every backup this image
+makes includes them: `BACKUP_ON_STOP`, the pre-update backup of
+`UPDATE_ON_START` and the scheduled job from `BACKUP_CRON`. It is off by
+default, and the two paragraphs below are why. For a manual backup pass the
+flag yourself:
 
 ```bash
 docker exec -u steam ark-server arkmanager backup @all --cluster
@@ -832,9 +836,9 @@ you keep a truncated archive and an uncompressed staging directory in the
 backup directory, and `arkmanager restore` without an argument picks the newest
 file in there with no name filter, so it will happily pick one of those.
 
-[Cronjobs](#add-cronjobs) are not covered by `BACKUP_CLUSTER`, add `--cluster`
-to the job yourself. Restoring such a backup has its own pitfalls, see
-[Restore a backup](#restore-a-backup).
+Only the generated `BACKUP_CRON` job picks the flag up, [cron jobs](#add-cronjobs)
+you wrote yourself need it added by hand. Restoring such a backup has its own
+pitfalls, see [Restore a backup](#restore-a-backup).
 
 ### Example: 3 maps in 1 container
 
