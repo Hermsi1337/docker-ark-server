@@ -243,6 +243,7 @@ function add_block_to_arkmanager_cfg() {
     echo "WARNING: could not stage ${config} (read-only?), continuing without ${description}..."
     return
   fi
+  STAGED_CONFIG="${staged}"
 
   if ! cp -p "${config}" "${staged}" || ! printf '\n%s\n' "${block}" >> "${staged}"; then
     echo "WARNING: could not write ${staged}, continuing without ${description}..."
@@ -250,7 +251,8 @@ function add_block_to_arkmanager_cfg() {
     echo "WARNING: could not replace ${config}, continuing without ${description}..."
   fi
 
-  rm -f "${staged}"
+  rm -f "${STAGED_CONFIG}"
+  STAGED_CONFIG=""
 }
 
 # the block lands in the config verbatim, arkmanager expands it when it sources

@@ -338,6 +338,52 @@ file_inode() {
   [ -z "${arkAlwaysRestartOnCrash}" ]
 }
 
+# the staged path is what the TERM/INT handler cleans up, so it has to be
+# cleared again once the file is gone
+@test "leaves no staged path recorded for the signal handler" {
+  write_config_without_the_blocks
+
+  add_backup_retention_to_arkmanager_cfg
+
+  [ -z "${STAGED_CONFIG}" ]
+}
+
+# the Discord migration appends to the same file in the same shape, so no
+# marker may match another migration's block
+@test "coexists with the other config migrations" {
+  write_config_without_the_blocks
+
+  add_discord_to_arkmanager_cfg
+  add_backup_retention_to_arkmanager_cfg
+  add_always_restart_on_crash_to_arkmanager_cfg
+  add_discord_to_arkmanager_cfg
+  add_backup_retention_to_arkmanager_cfg
+  add_always_restart_on_crash_to_arkmanager_cfg
+
+  run grep -cF '|| discordWebhookURL=' "${CONFIG}"
+  [ "$output" = "1" ]
+  run grep -cF '|| arkMaxBackupSizeMB=' "${CONFIG}"
+  [ "$output" = "1" ]
+  run grep -cF '|| arkAlwaysRestartOnCrash=true' "${CONFIG}"
+  [ "$output" = "1" ]
+}
+
+@test "a config carrying every migration still sources cleanly" {
+  write_config_without_the_blocks
+  add_discord_to_arkmanager_cfg
+  add_backup_retention_to_arkmanager_cfg
+  add_always_restart_on_crash_to_arkmanager_cfg
+
+  DISCORD_WEBHOOK_URL="https://example.invalid/hook"
+  MAX_BACKUP_SIZE_MB="4096"
+  ALWAYS_RESTART_ON_CRASH="true"
+  source "${CONFIG}"
+
+  [ "${discordWebhookURL}" = "https://example.invalid/hook" ]
+  [ "${arkMaxBackupSizeMB}" = "4096" ]
+  [ "${arkAlwaysRestartOnCrash}" = "true" ]
+}
+
 @test "migrates the config without calling arkmanager or steamcmd" {
   write_config_without_the_blocks
 
