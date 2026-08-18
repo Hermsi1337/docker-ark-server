@@ -35,11 +35,12 @@ downstream compose files and scripts.
 |---|---|
 | `Dockerfile` | Image build; installs arkmanager via upstream `netinstall.sh` |
 | `bin/docker-entrypoint.sh` | Container entrypoint (root: setup, cron, drops to steam user) |
+| `bin/cron-schedule.sh` | Cron schedule validation, sourced by the entrypoint (library, never run directly) |
 | `bin/steam-entrypoint.sh` | Server bootstrap/run as the `steam` user |
 | `bin/healthcheck.sh` | Container `HEALTHCHECK` (root: drops to the steam user, checks every managed instance) |
 | `conf.d/` | Templates copied into the image (`arkmanager.cfg`, `arkmanager-user.cfg`, `crontab`) |
 | `deploy/` | Example `docker-compose.yml` + `example.env` for end users |
-| `tests/` | bats suite for the pure-bash parts of `bin/steam-entrypoint.sh` |
+| `tests/` | bats suite for the pure-bash parts of both entrypoints |
 | `.github/workflows/build-and-deploy.yml` | "Build and Publish" — builds and pushes to all three registries |
 | `.github/workflows/deploy-preview.yml` | "Build PR Preview" — builds PRs, pushes `pr-<n>` for same-repo PRs |
 | `.github/workflows/update-arkmanager-pin.yml` | "Update arkmanager pin" — weekly bump PR for the `ARK_TOOLS_VERSION` default |
@@ -152,23 +153,41 @@ downstream compose files and scripts.
   signals the command but not reliably what the command forked.
 - Keep entrypoint/runtime behavior and documented environment variables
   backward compatible; users run long-lived servers against `latest`.
-- **`bin/steam-entrypoint.sh` is sourceable.** Everything above the
-  `BASH_SOURCE` guard is function definitions, everything below it is the
-  startup sequence. The test suite sources the script to get at the functions,
-  so new startup code goes below the guard and stays in the same order.
+- **Both entrypoints are sourceable.** Everything above the `BASH_SOURCE`
+  guard is function definitions, everything below it is the startup sequence.
+  The test suite sources the scripts to get at the functions, so new startup
+  code goes below the guard and stays in the same order.
+- **The root entrypoint stays readable as a sequence.** It runs as root and
+  sets up the volume, ownership and cron before dropping privileges, so
+  self-contained logic belongs in a library next to it (`bin/cron-schedule.sh`
+  is the first one), sourced via
+  `source "$(dirname "${BASH_SOURCE[0]}")/<file>"`. That path works both in
+  the repository (`bin/`) and in the image, where the existing `COPY bin/ /`
+  puts the files at `/`. No extra `COPY` line, and no absolute path.
+- **Function halves stay bash 3.2 compatible.** They are parsed on every
+  source, including on the macOS bash contributors run `bats tests` with, so
+  no `${var,,}`, no associative arrays. The startup halves are never parsed
+  when sourced and may use bash 4 syntax (they already do).
+- **No scheduled `arkmanager update`/`restart`.** In this container the
+  `arkmanager run` process is what PID 1 waits on, and both commands stop the
+  server by killing exactly that process (`doUpdate` calls `doStop update`,
+  `restart` is `doStop restart` with no start). The container exits with it,
+  mid-update. That is why only `BACKUP_CRON` exists; see issue #175.
 
 ## Common tasks
 
 - **Run the tests:** `bats tests` from the repository root
-  (`brew install bats-core`, needs 1.4.0 or newer). The suite sources
-  `bin/steam-entrypoint.sh` and exercises the pure-bash parts (sub instance
-  keys and ports, generated sub instance configs, the `Game.ini` symlink
-  healing, the declarative INI files, mod id collection, install detection,
-  the directory setup, the cluster config guard, the Discord config migration
-  and its hardcoded webhook warning, the disk space check, the appended
+  (`brew install bats-core`, needs 1.4.0 or newer). The suite sources both
+  entrypoints and exercises the pure-bash parts (sub instance keys and ports,
+  generated sub instance configs, the `Game.ini` symlink healing, the
+  declarative INI files, mod id collection, install detection, the directory
+  setup, the cluster config guard, the Discord config migration and its
+  hardcoded webhook warning, the disk space check, the appended
   arkmanager.cfg blocks, the backup budget and crash restart validation, the
-  `running-instances` state file the healthcheck reads). It never installs a
-  server, arkmanager and steamcmd are stubbed in `tests/stubs`.
+  `running-instances` state file the healthcheck reads, the generated crontab
+  block). `tests/cron_schedule.bats` sources `bin/cron-schedule.sh` directly
+  rather than the entrypoint. It never installs a server, arkmanager and
+  steamcmd are stubbed in `tests/stubs`.
 - **Writing tests:** assert with `[ ... ]` or the helpers in
   `tests/helper.bash`, never with `[[ ... ]]`. macOS ships bash 3.2, where a
   failing non-final `[[ ... ]]` does not fail the test, so those assertions

@@ -6,6 +6,13 @@
 SHELL=/bin/bash
 BASH_ENV=/app/environment
 #
+# Backups can also be scheduled with the BACKUP_CRON environment variable.
+# That job lands in a marked block at the end of this file which is rewritten
+# on every start. Everything outside that block is yours and stays untouched.
+#
+# Use either BACKUP_CRON or a backup example below, not both, or the backup
+# runs twice.
+#
 # Example of job definition:
 # .---------------- minute (0 - 59)
 # |  .------------- hour (0 - 23)

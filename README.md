@@ -126,6 +126,9 @@ Basic configuration is done with environment variables:
 | MAX_BACKUP_SIZE_MB | `empty` | Size budget for `/app/backup`, in megabytes. arkmanager deletes the oldest backups once the directory grows past it, see [Backup retention](#backup-retention) |
 | WARN_ON_STOP | true | Broadcast a shutdown warning to players when the container is stopped gracefully |
 | ALWAYS_RESTART_ON_CRASH | `empty` | Set to `true` to let arkmanager restart an instance that crashes before it finished starting. Read [Crash restarts](#crash-restarts) first, this can loop forever |
+| BACKUP_CRON | `empty` | Cron schedule for `arkmanager backup @all`, e.g. `BACKUP_CRON=0 3 * * *`, see [Add cronjobs](#add-cronjobs) |
+| UPDATE_WARN_MINUTES | 60 | How many minutes ahead players are warned by `arkmanager update --warn` (arkmanager's `arkwarnminutes`). `0` is not "no warning", arkmanager falls back to 60 for it |
+| TZ | UTC | Container timezone. Cron schedules follow it, so set it to your own zone (e.g. `TZ=Europe/Berlin`) |
 | ENABLE_CROSSPLAY | false | Enable crossplay (starts the server with `-crossplay`). When enabled, BattlEye should be disabled as it likes to disconnect Epic players |
 | DISABLE_BATTLEYE | false | Disable BattlEye protection (starts the server with `-NoBattlEye`) |
 | ARK_EXTRA_OPTS | `empty` | Additional ARK command line options, space separated (e.g. `ARK_EXTRA_OPTS=-ForceAllowCaveFlyers -PreventHibernation`). Each option must be of the form `-Flag` or `-Name=Value`; spaces inside an option are not supported |
@@ -526,33 +529,87 @@ For a full list of all available commands
 
 ### Add cronjobs
 
-You can add cronjobs inside the container, e.g. for scheduled updates or
-backups. Edit the crontab file located in the server volume:
+A scheduled backup comes from an environment variable:
+
+```yaml
+environment:
+  TZ: "Europe/Berlin"
+  BACKUP_CRON: "0 3 * * *"
+```
+
+That gives you a nightly backup. The value is a plain 5-field cron schedule
+(minute, hour, day of month, month, day of week), the `@daily`/`@hourly` style
+shorthands work too, and it turns into this job:
+
+```bash
+arkmanager backup @all
+```
+
+Set `TZ`, otherwise the container runs in UTC and your 3am backup fires at
+some other hour. A broken schedule (wrong number of fields, an hour of 24, a
+step without a range, anything that is not cron syntax) stops the container at
+startup with an error instead of installing a job that never fires. Cron
+itself does not check any of that, it installs `0 24 * * *` without a word.
+
+(`@all` targets every instance — identical to `@main` on a single-map server
+and required on [multi-map servers](#cluster-and-multi-map-support).)
+
+A few things worth knowing:
+
+* Backups are capped by `arkMaxBackupSizeMB="500"` in
+  `<your-volume>/arkmanager/arkmanager.cfg`. At roughly 1-2MB per backup that
+  is a few hundred of them, so `*/15 * * * *` (96 per day) keeps about three
+  to five days of history before the oldest ones get deleted.
+* Nothing serializes cron jobs and nothing locks, so keep your own jobs clear
+  of the backup window.
+* There is no `UPDATE_CRON` or `RESTART_CRON`, on purpose. In this container
+  the server process is PID 1, and every arkmanager command that stops the
+  server (`update` once a patch exists, `restart`) kills exactly that process,
+  which takes the container down with it. Update with `UPDATE_ON_START=true`
+  plus a scheduled `docker restart` from the host.
+* `UPDATE_WARN_MINUTES` applies to a manual `arkmanager update --warn` you run
+  yourself. It is a maximum: our `arkmanager.cfg` ships
+  `arkprecisewarn="false"`, so with nobody online the update starts
+  immediately instead of counting down. Set `arkprecisewarn="true"` if you
+  plan a maintenance window around the countdown.
+
+The generated job is written into a marked block at the end of
+`/app/crontab`:
+
+```bash
+# >>> docker-ark-server: generated cron jobs - do not edit, this block is rewritten on every start >>>
+0 3 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
+# <<< docker-ark-server: generated cron jobs <<<
+```
+
+Only that block is regenerated, so you can still add your own jobs to the same
+file and they survive restarts (just do not schedule the same thing twice, the
+commented backup examples in the file do exactly what `BACKUP_CRON` does):
 
 ```bash
 vim "${HOME}/ark-server/crontab"
 ```
 
-Add your desired cronjobs with valid syntax (they run as the `steam` user):
-
 ```bash
-0 4 * * * arkmanager update @all --warn --update-mods >> /app/log/crontab.log 2>&1
-0 0 * * * arkmanager backup @all >> /app/log/crontab.log 2>&1
+*/30 * * * * arkmanager broadcast @all "Have fun!" >> /app/log/crontab.log 2>&1
 ```
 
-(`@all` targets every instance — identical to `@main` on a single-map server
-and required on [multi-map servers](#cluster-and-multi-map-support).)
+Jobs run as the `steam` user.
 
 The container environment is exported to `/app/environment` on every start and
 loaded into each job via the crontab's `BASH_ENV` header, so cron jobs see the
-same variables as the server process. If your crontab was created by an older
-image and jobs fail with errors like `mkdir: cannot create directory '/server'`,
-add these two lines at the top of the file:
+same variables as the server process. Both header lines are required, cron
+runs jobs under `SHELL` and `/bin/sh` ignores `BASH_ENV` entirely:
 
 ```bash
 SHELL=/bin/bash
 BASH_ENV=/app/environment
 ```
+
+Crontabs from older images do not have them, and jobs then fail with errors
+like `mkdir: cannot create directory '/server'`. As soon as you set
+`BACKUP_CRON` the entrypoint writes the two lines for you, otherwise add them
+by hand.
 
 The crontab is loaded when the container starts, so apply your changes with:
 
@@ -717,7 +774,8 @@ docker exec -u steam ark-server arkmanager backup @all
 ```
 
 The bundled [graceful shutdown](#graceful-shutdown) warns, saves and stops
-**all** instances. For [cronjobs](#add-cronjobs) in a multi-map setup, always
+**all** instances. The generated [backup job](#add-cronjobs) does the same, and
+hand written jobs in a multi-map setup should always
 target `@all` — especially for updates: `arkmanager update @all --warn`
 stops and restarts every instance, while an update of a single instance
 would swap the shared server binaries underneath the still-running others.
