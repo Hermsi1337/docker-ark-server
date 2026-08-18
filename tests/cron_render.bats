@@ -244,6 +244,63 @@ setup() {
   [ "${GENERATED_CRON_JOB_COUNT}" -eq 1 ]
 }
 
+# the shipped template documents the flag in a comment, so only active job
+# lines can answer whether the generated job carries it
+generated_cluster_job_lines() {
+  grep -c '^[^#]*arkmanager backup @all --cluster' "${ARK_SERVER_VOLUME}/crontab" || true
+}
+
+@test "the backup job leaves the cluster data out without the opt-in" {
+  BACKUP_CRON="0 3 * * *"
+  CLUSTER_ID="my-cluster"
+
+  render_generated_cronjobs
+
+  run cat "${ARK_SERVER_VOLUME}/crontab"
+  assert_contains "$output" "0 3 * * * arkmanager backup @all >> ${ARK_SERVER_VOLUME}/log/crontab.log 2>&1"
+  [ "$(generated_cluster_job_lines)" -eq 0 ]
+}
+
+@test "the backup job takes the cluster data with the opt-in" {
+  BACKUP_CRON="0 3 * * *"
+  BACKUP_CLUSTER="true"
+  CLUSTER_ID="my-cluster"
+
+  render_generated_cronjobs
+
+  run cat "${ARK_SERVER_VOLUME}/crontab"
+  assert_contains "$output" "0 3 * * * arkmanager backup @all --cluster >> ${ARK_SERVER_VOLUME}/log/crontab.log 2>&1"
+  [ "$(generated_job_lines)" -eq 1 ]
+}
+
+@test "the opt-in without a cluster id changes nothing" {
+  BACKUP_CRON="0 3 * * *"
+  BACKUP_CLUSTER="true"
+  CLUSTER_ID=""
+
+  render_generated_cronjobs
+
+  run cat "${ARK_SERVER_VOLUME}/crontab"
+  assert_contains "$output" "0 3 * * * arkmanager backup @all >> ${ARK_SERVER_VOLUME}/log/crontab.log 2>&1"
+  [ "$(generated_cluster_job_lines)" -eq 0 ]
+}
+
+@test "turning the opt-in off again drops the flag from the block" {
+  BACKUP_CRON="0 3 * * *"
+  BACKUP_CLUSTER="true"
+  CLUSTER_ID="my-cluster"
+  render_generated_cronjobs
+
+  BACKUP_CLUSTER="false"
+  render_generated_cronjobs
+
+  run cat "${ARK_SERVER_VOLUME}/crontab"
+  assert_contains "$output" "0 3 * * * arkmanager backup @all >> ${ARK_SERVER_VOLUME}/log/crontab.log 2>&1"
+  [ "$(generated_cluster_job_lines)" -eq 0 ]
+  assert_contains "$output" "0 1 * * * echo hi"
+  [ "$(generated_job_lines)" -eq 1 ]
+}
+
 @test "rendering never calls arkmanager or steamcmd" {
   BACKUP_CRON="0 3 * * *"
 

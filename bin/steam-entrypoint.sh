@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
 
+# arkmanager only takes its pre-update backup when it really updates something
+# (its own gate needs an app or a mod update), and ours has to follow that or
+# every container start writes a backup. 'checkupdate' exits non-zero when a
+# server update is available, 'checkmodupdate' exits zero when a mod update is.
+# --validate and --beta make arkmanager update unconditionally.
+function update_is_pending() {
+  [[ "${VALIDATE_ON_START}" != "true" ]] || return 0
+  [[ -z "${BETA}" ]] || return 0
+
+  if ! "${ARKMANAGER}" checkupdate @main >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ ${#ALL_GAME_MOD_IDS[@]} -gt 0 ]] && "${ARKMANAGER}" checkmodupdate @main >/dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
 function may_update() {
   if [[ "${UPDATE_ON_START}" != "true" ]]; then
     [[ "${VALIDATE_ON_START}" != "true" ]] ||
@@ -9,7 +29,7 @@ function may_update() {
 
   echo "\$UPDATE_ON_START is 'true'..."
 
-  local UPDATE_ARGS=(--verbose --update-mods --backup --no-autostart)
+  local UPDATE_ARGS=(--verbose --update-mods --no-autostart)
   # let steamcmd validate and repair the installed files, e.g. after a
   # corrupted download - slower, therefore opt-in
   if [[ "${VALIDATE_ON_START}" == "true" ]]; then
@@ -17,12 +37,32 @@ function may_update() {
     UPDATE_ARGS+=(--validate)
   fi
 
+  # arkmanager's own pre-update backup runs without the cluster data and
+  # 'update' exits 1 on the unknown option --cluster, so take that backup
+  # ourselves and switch the built-in one off for this call (arkmanager.cfg
+  # derives arkBackupPreUpdate from PRE_UPDATE_BACKUP)
+  local UPDATE_ENV=()
+  if [[ "${PRE_UPDATE_BACKUP}" == "true" ]]; then
+    if [[ ${#CLUSTER_BACKUP_ARGS[@]} -gt 0 ]] && update_is_pending; then
+      echo "Creating the pre-update backup including the cluster data..."
+      if ! "${ARKMANAGER}" backup @main "${CLUSTER_BACKUP_ARGS[@]}"; then
+        echo "ERROR: the pre-update backup failed - refusing to update without one."
+        echo "       Check the output above and the free disk space on ${ARK_SERVER_VOLUME},"
+        echo "       or set PRE_UPDATE_BACKUP=false to update without a backup."
+        exit 1
+      fi
+      UPDATE_ENV=(PRE_UPDATE_BACKUP=false)
+    else
+      UPDATE_ARGS+=(--backup)
+    fi
+  fi
+
   # auto checks if a update is needed, if yes, then update the server or mods
   # (otherwise it just does nothing). At boot time no instance is running yet,
   # so updating via @main is enough - post-boot updates in a multi-instance
   # setup must target @all instead (see the crontab examples), because an
   # update swaps the shared binaries but only restarts the chosen instance
-  ${ARKMANAGER} update @main "${UPDATE_ARGS[@]}" "${BETA_ARGS[@]}"
+  env "${UPDATE_ENV[@]}" "${ARKMANAGER}" update @main "${UPDATE_ARGS[@]}" "${BETA_ARGS[@]}"
 }
 
 # invoked indirectly via 'trap stop_server TERM INT'; SC2317 is what shellcheck
@@ -43,7 +83,7 @@ function stop_server() {
 
   if [[ "${BACKUP_ON_STOP}" == "true" ]]; then
     echo "\$BACKUP_ON_STOP is 'true', creating a backup..."
-    ${ARKMANAGER} backup @all || echo "Backup on stop failed, continuing shutdown..."
+    ${ARKMANAGER} backup @all "${CLUSTER_BACKUP_ARGS[@]}" || echo "Backup on stop failed, continuing shutdown..."
   fi
 
   # terminate any run processes that are still alive (e.g. the signal arrived
@@ -442,6 +482,29 @@ function add_warn_minutes_to_arkmanager_cfg() {
 [ -z "${UPDATE_WARN_MINUTES}" ] || arkwarnminutes="${UPDATE_WARN_MINUTES}"'
 }
 
+# arkmanager leaves the cluster directory out of every backup unless it is
+# called with --cluster, and including it costs time and backup space per
+# instance - therefore opt-in
+function resolve_cluster_backup_args() {
+  CLUSTER_BACKUP_ARGS=()
+
+  [[ "${BACKUP_CLUSTER}" == "true" ]] || return 0
+
+  if [[ -z "${CLUSTER_ID}" ]]; then
+    echo "WARNING: BACKUP_CLUSTER has no effect because CLUSTER_ID is not set - skipping the cluster data"
+
+    return 0
+  fi
+
+  CLUSTER_BACKUP_ARGS=(--cluster)
+  echo "WARNING: BACKUP_CLUSTER is 'true' - backups now also contain /cluster."
+  echo "         With sub instances every instance tarball carries its own copy,"
+  echo "         and arkmanager prunes ${ARK_SERVER_VOLUME}/backup down to"
+  echo "         arkMaxBackupSizeMB (500 by default) after every single instance"
+  echo "         backup. Raise it with MAX_BACKUP_SIZE_MB first, otherwise a backup"
+  echo "         run can delete your whole backup history."
+}
+
 # parse and validate SUB_INSTANCE_KEYS: each key becomes part of a bash
 # variable name (SUB_<KEY>_*), a config filename (sub.<KEY>.cfg) and an
 # arkmanager instance name - restrict keys to a safe charset and fail loudly
@@ -755,6 +818,7 @@ add_always_restart_on_crash_to_arkmanager_cfg
 add_warn_minutes_to_arkmanager_cfg
 warn_on_overridden_backup_budget
 remake_sub_instances_cfg
+resolve_cluster_backup_args
 
 # multi-instance needs per-instance autorestart files: the historic template
 # pinned one shared arkautorestartfile, so 'arkmanager stop @one' would
