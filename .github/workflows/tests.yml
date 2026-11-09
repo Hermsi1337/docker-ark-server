@@ -33,7 +33,7 @@ jobs:
             xargs -0 -r -n1 bash -n
 
       - name: Install bats
-        uses: bats-core/bats-action@4.0.0
+        uses: bats-core/bats-action@4.1.0
         with:
           bats-version: 1.14.0
           support-install: false
